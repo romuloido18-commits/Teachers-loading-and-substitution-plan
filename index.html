@@ -5,15 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#eff6ff">
     <title>Teacher Load Manager</title>
-    <link rel="stylesheet" href="styles.css?v=20261015-sidebar">
-    <script src="app.js?v=20261015-sidebar" defer></script>
+    <link rel="stylesheet" href="styles.css?v=20261015-branding">
+    <script src="app.js?v=20261015-branding" defer></script>
   </head>
   <body>
     <main class="login-screen" id="login-screen">
       <form class="login-card" id="login-form">
         <section class="login-welcome" aria-label="Teacher Load Manager">
           <div class="login-brand">
-            <span class="brand-mark" aria-hidden="true">TL</span>
+            <span class="brand-mark" data-brand-mark aria-hidden="true">TL</span>
             <span class="brand-copy"><strong>Teacher Load</strong><span>MANAGER</span></span>
           </div>
           <div class="login-welcome-copy">
@@ -44,7 +44,7 @@
     <div class="app-shell" id="app-shell" hidden>
       <aside class="sidebar" id="sidebar">
         <a class="brand" href="#overview" aria-label="Teacher Load Manager home">
-          <span class="brand-mark" aria-hidden="true">TL</span>
+          <span class="brand-mark" data-brand-mark aria-hidden="true">TL</span>
           <span class="brand-copy"><strong>Teacher Load</strong><span>MANAGER</span></span>
         </a>
 
@@ -103,6 +103,15 @@
         </header>
 
         <div class="page-content">
+          <section class="print-branding" id="print-branding" aria-hidden="true">
+            <img id="print-school-logo" alt="">
+            <div class="print-branding-details">
+              <strong id="print-school-name"></strong>
+              <span id="print-school-address"></span>
+              <span id="print-school-id"></span>
+              <span id="print-principal"></span>
+            </div>
+          </section>
           <section class="view-panel active" id="view-overview" aria-labelledby="page-title">
             <div class="page-heading">
               <div>
@@ -264,12 +273,17 @@
     <div class="sidebar-scrim" id="sidebar-scrim"></div>
     <div class="toast-region" id="toast-region" role="status" aria-live="polite"></div>
     <section class="substitution-print-sheet" id="substitution-print-sheet" aria-hidden="true">
+      <header class="substitution-print-branding">
+        <img id="substitution-print-logo" alt="">
+        <div><strong id="substitution-print-school-name"></strong><span id="substitution-print-school-address"></span><span id="substitution-print-school-id"></span></div>
+      </header>
       <h1>Substitution plan</h1>
       <p id="substitution-print-summary"></p>
       <table>
         <thead><tr><th>Learning area</th><th>Grade &amp; section</th><th>Group</th><th>Period &amp; time</th><th>Days</th></tr></thead>
         <tbody id="substitution-print-loads"></tbody>
       </table>
+      <p class="substitution-print-principal" id="substitution-print-principal"><strong id="substitution-print-principal-name"></strong><span id="substitution-print-principal-designation"></span></p>
     </section>
 
     <dialog class="form-dialog" id="teacher-dialog" aria-labelledby="teacher-dialog-title">
@@ -372,10 +386,24 @@
 
     <dialog class="form-dialog settings-dialog" id="settings-dialog" aria-labelledby="settings-dialog-title">
       <form id="settings-form">
-        <div class="dialog-heading"><div><div class="eyebrow">WORKSPACE SETTINGS</div><h2 id="settings-dialog-title">School, group &amp; period settings</h2><p>Set group names and a time range for each group's periods.</p></div><button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button></div>
+        <div class="dialog-heading"><div><div class="eyebrow">WORKSPACE SETTINGS</div><h2 id="settings-dialog-title">School, group &amp; period settings</h2><p>Manage school branding, groups, and period schedules.</p></div><button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button></div>
         <div class="form-grid">
           <label class="field field-full">School name<input id="setting-school" name="schoolName" type="text" maxlength="120" placeholder="My School"></label>
+          <label class="field field-full">School address<input id="setting-school-address" name="schoolAddress" type="text" maxlength="200" placeholder="School street, barangay, municipality"></label>
+          <label class="field">School ID<input id="setting-school-id" name="schoolId" type="text" maxlength="40" placeholder="e.g. 123456"></label>
           <label class="field field-full">School year<input id="setting-year" name="schoolYear" type="text" maxlength="30" placeholder="2026–2027"></label>
+          <label class="field">Principal's name<input id="setting-principal-name" name="principalName" type="text" maxlength="120" placeholder="Full name"></label>
+          <label class="field">Principal's designation<input id="setting-principal-designation" name="principalDesignation" type="text" maxlength="100" placeholder="e.g. School Principal"></label>
+          <div class="field field-full school-logo-field">
+            <label class="field" for="setting-school-logo">School logo</label>
+            <div class="school-logo-controls">
+              <img id="setting-school-logo-preview" alt="Current school logo" hidden>
+              <input id="setting-school-logo" name="schoolLogo" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
+              <button class="button button-secondary button-small" id="remove-school-logo" type="button" hidden>Remove logo</button>
+            </div>
+            <small class="field-hint">Choose a PNG, JPG, WebP, or GIF image up to 1 MB. The logo is saved in this browser.</small>
+            <input id="setting-remove-school-logo" type="checkbox" hidden>
+          </div>
         </div>
         <section class="group-names-field" aria-labelledby="group-names-title">
           <div class="period-settings-heading"><h3 id="group-names-title">Group names</h3><span>Choose and manage groups</span></div>

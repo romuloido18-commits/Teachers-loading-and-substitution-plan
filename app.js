@@ -12,6 +12,11 @@ const DEFAULT_PERIOD_TIMES = Object.fromEntries(
 const DEFAULT_SETTINGS = {
   schoolName: "My School",
   schoolYear: "2026–2027",
+  schoolAddress: "",
+  schoolId: "",
+  principalName: "",
+  principalDesignation: "",
+  schoolLogo: "",
   groupNames: ["Morning shift", "Afternoon shift"],
   autoRecordPeriods: true,
   periodTimes: DEFAULT_PERIOD_TIMES,
@@ -341,8 +346,41 @@ function render() {
 }
 
 function renderHeader() {
-  document.querySelector("#school-context-name").textContent = state.settings.schoolName || DEFAULT_SETTINGS.schoolName;
+  const settings = state.settings;
+  const schoolName = settings.schoolName || DEFAULT_SETTINGS.schoolName;
+  document.querySelector("#school-context-name").textContent = schoolName;
   document.querySelector("#school-context-year").textContent = state.settings.schoolYear || DEFAULT_SETTINGS.schoolYear;
+  document.querySelectorAll("[data-brand-mark]").forEach((mark) => {
+    mark.replaceChildren();
+    if (settings.schoolLogo) {
+      const logo = document.createElement("img");
+      logo.src = settings.schoolLogo;
+      logo.alt = "";
+      mark.append(logo);
+      mark.classList.add("has-school-logo");
+    } else {
+      mark.textContent = "TL";
+      mark.classList.remove("has-school-logo");
+    }
+  });
+  const printLogo = document.querySelector("#print-school-logo");
+  printLogo.src = settings.schoolLogo || "";
+  printLogo.hidden = !settings.schoolLogo;
+  document.querySelector("#print-school-name").textContent = schoolName;
+  document.querySelector("#print-school-address").textContent = settings.schoolAddress || "";
+  document.querySelector("#print-school-id").textContent = settings.schoolId ? `School ID: ${settings.schoolId}` : "";
+  document.querySelector("#print-principal").textContent = settings.principalName
+    ? `Principal: ${settings.principalName}${settings.principalDesignation ? ` · ${settings.principalDesignation}` : ""}`
+    : "";
+  const substitutionLogo = document.querySelector("#substitution-print-logo");
+  substitutionLogo.src = settings.schoolLogo || "";
+  substitutionLogo.hidden = !settings.schoolLogo;
+  document.querySelector("#substitution-print-school-name").textContent = schoolName;
+  document.querySelector("#substitution-print-school-address").textContent = settings.schoolAddress || "";
+  document.querySelector("#substitution-print-school-id").textContent = settings.schoolId ? `School ID: ${settings.schoolId}` : "";
+  document.querySelector("#substitution-print-principal-name").textContent = settings.principalName || "";
+  document.querySelector("#substitution-print-principal-designation").textContent = settings.principalDesignation || "";
+  document.querySelector("#substitution-print-principal").hidden = !settings.principalName && !settings.principalDesignation;
 }
 
 function renderStats() {
@@ -1246,7 +1284,16 @@ function exportCsv() {
 
 function openSettingsDialog() {
   document.querySelector("#setting-school").value = state.settings.schoolName ?? "";
+  document.querySelector("#setting-school-address").value = state.settings.schoolAddress ?? "";
+  document.querySelector("#setting-school-id").value = state.settings.schoolId ?? "";
   document.querySelector("#setting-year").value = state.settings.schoolYear ?? "";
+  document.querySelector("#setting-principal-name").value = state.settings.principalName ?? "";
+  document.querySelector("#setting-principal-designation").value = state.settings.principalDesignation ?? "";
+  document.querySelector("#setting-school-logo").value = "";
+  document.querySelector("#setting-remove-school-logo").checked = false;
+  if (schoolLogoPreviewUrl) URL.revokeObjectURL(schoolLogoPreviewUrl);
+  schoolLogoPreviewUrl = "";
+  updateSchoolLogoPreview(state.settings.schoolLogo ?? "");
   document.querySelector("#setting-auto-record").checked = Boolean(state.settings.autoRecordPeriods);
   const groupNames = state.settings.groupNames ?? DEFAULT_SETTINGS.groupNames;
   state.settingsDraftGroupPeriodTimes = createGroupPeriodTimes(
@@ -1258,6 +1305,41 @@ function openSettingsDialog() {
   renderPeriodGroupOptions(groupNames, groupNames[0]);
   renderPeriodTimeInputs(groupNames[0]);
   elements.settingsDialog.showModal();
+}
+
+let schoolLogoPreviewUrl = "";
+
+function updateSchoolLogoPreview(source) {
+  const preview = document.querySelector("#setting-school-logo-preview");
+  const removeButton = document.querySelector("#remove-school-logo");
+  preview.src = source || "";
+  preview.hidden = !source;
+  removeButton.hidden = !source;
+}
+
+function validateSchoolLogoFile(file) {
+  const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+  if (!allowedTypes.includes(file.type)) {
+    showToast("Choose a PNG, JPG, WebP, or GIF image for the school logo.", "error");
+    return false;
+  }
+  if (file.size > 1024 * 1024) {
+    showToast("The school logo must be 1 MB or smaller.", "error");
+    return false;
+  }
+  return true;
+}
+
+function readSchoolLogo(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => {
+      if (typeof reader.result === "string") resolve(reader.result);
+      else reject(new Error("The selected school logo could not be read."));
+    });
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("The selected school logo could not be read.")));
+    reader.readAsDataURL(file);
+  });
 }
 
 function renderGroupNameOptions(groupNames, selectedGroup = "") {
@@ -1340,9 +1422,22 @@ function removeGroupName() {
   renderPeriodGroupOptions(remainingNames, remainingNames[0]);
 }
 
-function saveSettings(event) {
+async function saveSettings(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
+  const logoFile = document.querySelector("#setting-school-logo").files[0];
+  let schoolLogo = state.settings.schoolLogo ?? "";
+  if (logoFile) {
+    if (!validateSchoolLogoFile(logoFile)) return;
+    try {
+      schoolLogo = await readSchoolLogo(logoFile);
+    } catch (error) {
+      showToast(`Couldn't read the school logo: ${error.message}`, "error");
+      return;
+    }
+  } else if (document.querySelector("#setting-remove-school-logo").checked) {
+    schoolLogo = "";
+  }
   const groupNames = [...document.querySelector("#setting-group-names").options].map((option) => option.value);
   if (!groupNames.length) {
     showToast("Enter at least one group name.", "error");
@@ -1383,8 +1478,14 @@ function saveSettings(event) {
     }
   }
   state.settings = {
+    ...previous,
     schoolName: String(form.get("schoolName") ?? "").trim() || DEFAULT_SETTINGS.schoolName,
     schoolYear: String(form.get("schoolYear") ?? "").trim() || DEFAULT_SETTINGS.schoolYear,
+    schoolAddress: String(form.get("schoolAddress") ?? "").trim(),
+    schoolId: String(form.get("schoolId") ?? "").trim(),
+    principalName: String(form.get("principalName") ?? "").trim(),
+    principalDesignation: String(form.get("principalDesignation") ?? "").trim(),
+    schoolLogo,
     groupNames,
     autoRecordPeriods: document.querySelector("#setting-auto-record").checked,
     periodTimes: previous.periodTimes ?? DEFAULT_PERIOD_TIMES,
@@ -1398,7 +1499,7 @@ function saveSettings(event) {
   state.settingsDraftGroupPeriodTimes = null;
   state.settingsPeriodGroup = "";
   render();
-  showToast("School details, group names, and period times updated.");
+  showToast("School branding, group names, and period times updated.");
 }
 
 function closeSidebar() {
@@ -1478,6 +1579,25 @@ function initializeApp() {
   document.querySelector("#print-overview").addEventListener("click", () => window.print());
   document.querySelector("#open-settings").addEventListener("click", openSettingsDialog);
   document.querySelector("#sidebar-open-settings").addEventListener("click", openSettingsDialog);
+  document.querySelector("#setting-school-logo").addEventListener("change", (event) => {
+    const file = event.currentTarget.files[0];
+    if (!file) return;
+    if (!validateSchoolLogoFile(file)) {
+      event.currentTarget.value = "";
+      return;
+    }
+    document.querySelector("#setting-remove-school-logo").checked = false;
+    if (schoolLogoPreviewUrl) URL.revokeObjectURL(schoolLogoPreviewUrl);
+    schoolLogoPreviewUrl = URL.createObjectURL(file);
+    updateSchoolLogoPreview(schoolLogoPreviewUrl);
+  });
+  document.querySelector("#remove-school-logo").addEventListener("click", () => {
+    document.querySelector("#setting-school-logo").value = "";
+    document.querySelector("#setting-remove-school-logo").checked = true;
+    if (schoolLogoPreviewUrl) URL.revokeObjectURL(schoolLogoPreviewUrl);
+    schoolLogoPreviewUrl = "";
+    updateSchoolLogoPreview("");
+  });
   document.querySelector("#add-substitution-plan").addEventListener("click", openSubstitutionDialog);
   document.querySelector("#manage-leave-teachers")?.addEventListener("click", () => {
     document.querySelector("#substitution-dialog").close();

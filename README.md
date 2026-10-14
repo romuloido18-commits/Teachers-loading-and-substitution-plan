@@ -8,6 +8,8 @@ Use **Substitution plans** in the sidebar to assign an Active teacher to selecte
 
 The interface uses Arial Narrow at 16px throughout.
 
+Open **Settings** to configure school branding, including the school name, address, School ID, logo, and principal's name and designation. The logo must be a PNG, JPG, WebP, or GIF image no larger than 1 MB. Branding is stored with the school's records in that browser and appears in the app and printed reports.
+
 ## Sign in
 
 Sign in with username `admin` and the configured password. The sign-in gate is stored in the current browser session. This static, browser-only app does not provide server-side authentication or secure access control; credentials are visible in the public source and must not be relied on to protect confidential records.
