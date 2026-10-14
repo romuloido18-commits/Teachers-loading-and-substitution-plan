@@ -1477,6 +1477,7 @@ function initializeApp() {
   document.querySelector("#export-loads").addEventListener("click", exportCsv);
   document.querySelector("#print-overview").addEventListener("click", () => window.print());
   document.querySelector("#open-settings").addEventListener("click", openSettingsDialog);
+  document.querySelector("#sidebar-open-settings").addEventListener("click", openSettingsDialog);
   document.querySelector("#add-substitution-plan").addEventListener("click", openSubstitutionDialog);
   document.querySelector("#manage-leave-teachers")?.addEventListener("click", () => {
     document.querySelector("#substitution-dialog").close();
