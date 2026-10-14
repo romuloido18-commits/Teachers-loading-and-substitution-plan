@@ -10,7 +10,7 @@ The interface uses Arial Narrow at 16px throughout.
 
 ## Sign in
 
-Sign in with username `admin` and password `admin`. The sign-in gate is stored in the current browser session. This static, browser-only app does not provide server-side authentication or secure access control; change the credentials in `app.js` before use and do not rely on this login to protect confidential records.
+Sign in with username `admin` and the configured password. The sign-in gate is stored in the current browser session. This static, browser-only app does not provide server-side authentication or secure access control; credentials are visible in the public source and must not be relied on to protect confidential records.
 
 ## Run
 

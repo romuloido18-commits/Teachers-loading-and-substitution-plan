@@ -3,7 +3,7 @@
 const STORAGE_KEY = "teacher-load-manager-v1";
 const LOGIN_SESSION_KEY = "teacher-load-manager-authenticated";
 const LOGIN_USERNAME = "admin";
-const LOGIN_PASSWORD = "admin";
+const LOGIN_PASSWORD = "Admin@1831";
 let appInitialized = false;
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const DEFAULT_PERIOD_TIMES = Object.fromEntries(
