@@ -171,6 +171,20 @@
               </div>
               <div class="heading-actions"><button class="button button-primary" id="add-teacher" type="button"><span aria-hidden="true">＋</span> Add teacher</button></div>
             </div>
+            <div class="teacher-dashboard-links" aria-label="Teacher dashboard shortcuts">
+              <button class="teacher-dashboard-card" data-go="loads" type="button">
+                <span class="teacher-dashboard-icon" aria-hidden="true">▤</span>
+                <span class="teacher-dashboard-copy"><strong>Teaching loads</strong><small>View and manage teacher assignments</small></span>
+                <span class="teacher-dashboard-count" id="teacher-dashboard-load-count">0 assignments</span>
+                <span class="teacher-dashboard-arrow" aria-hidden="true">→</span>
+              </button>
+              <button class="teacher-dashboard-card" data-go="substitutions" type="button">
+                <span class="teacher-dashboard-icon" aria-hidden="true">⇄</span>
+                <span class="teacher-dashboard-copy"><strong>Substitution plans</strong><small>Review and manage staff coverage</small></span>
+                <span class="teacher-dashboard-count" id="teacher-dashboard-substitution-count">0 plans</span>
+                <span class="teacher-dashboard-arrow" aria-hidden="true">→</span>
+              </button>
+            </div>
             <section class="panel list-panel">
               <div class="list-toolbar">
                 <div><h2>Teacher directory</h2><p class="panel-subtitle" id="teacher-list-caption">0 teacher profiles</p></div>

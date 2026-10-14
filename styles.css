@@ -123,6 +123,16 @@ h1 { margin: 11px 0 5px; font-size: clamp(26px, 2.5vw, 33px); font-weight: 700; 
 .button-small { min-height: 32px; padding: 0 11px; font-size: 10px; }
 .stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; margin-bottom: 19px; }
 .stat-card { min-height: 133px; padding: 18px 19px 15px; border: 1px solid #e9ede9; border-radius: 9px; background: var(--surface); box-shadow: 0 2px 6px #20352804; }
+.teacher-dashboard-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin: -7px 0 20px; }
+.teacher-dashboard-card { display: flex; min-width: 0; min-height: 72px; align-items: center; gap: 12px; padding: 13px 15px; border: 1px solid #e5ebe6; border-radius: 9px; background: var(--surface); color: inherit; text-align: left; cursor: pointer; transition: border-color .16s, box-shadow .16s, transform .16s; }
+.teacher-dashboard-card:hover { transform: translateY(-1px); border-color: #bfd0c3; box-shadow: 0 5px 14px #2035280a; }
+.teacher-dashboard-card:focus-visible { outline: 3px solid #b9d0fb; outline-offset: 2px; }
+.teacher-dashboard-icon { display: grid; flex: 0 0 36px; width: 36px; height: 36px; place-items: center; border-radius: 8px; background: #edf3ff; color: #4b77c5; font-size: 17px; }
+.teacher-dashboard-copy { display: grid; min-width: 0; gap: 4px; }
+.teacher-dashboard-copy strong { color: #34463a; font-size: 12px; font-weight: 700; }
+.teacher-dashboard-copy small { color: #859087; font-size: 10px; }
+.teacher-dashboard-count { margin-left: auto; color: #64766a; font-size: 10px; white-space: nowrap; }
+.teacher-dashboard-arrow { color: #839286; font-size: 16px; }
 .stat-top { display: flex; align-items: center; justify-content: space-between; }
 .stat-label { color: #6d7a71; font-size: 11px; font-weight: 500; }
 .stat-icon { display: grid; width: 31px; height: 31px; place-items: center; border-radius: 8px; font-size: 17px; }
@@ -333,6 +343,7 @@ td { height: 56px; padding: 8px 12px; border-top: 1px solid #f0f2f0; color: #556
   .page-heading h1 { font-size: 27px; }
   .heading-actions { width: 100%; }
   .heading-actions .button { flex: 1; }
+  .teacher-dashboard-links { grid-template-columns: 1fr; }
   .stat-grid { grid-template-columns: 1fr; gap: 9px; }
   .stat-card { display: grid; min-height: 0; grid-template-columns: 1fr auto; align-items: center; padding: 13px 15px; }
   .stat-top { display: contents; }

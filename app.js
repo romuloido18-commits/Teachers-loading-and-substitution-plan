@@ -336,6 +336,8 @@ function render() {
   renderSubstitutionPlans();
   document.querySelector("#teacher-nav-count").textContent = String(state.teachers.length);
   document.querySelector("#load-nav-count").textContent = String(state.loads.length);
+  document.querySelector("#teacher-dashboard-load-count").textContent = `${state.loads.length} ${state.loads.length === 1 ? "assignment" : "assignments"}`;
+  document.querySelector("#teacher-dashboard-substitution-count").textContent = `${state.substitutionPlans.length} ${state.substitutionPlans.length === 1 ? "plan" : "plans"}`;
 }
 
 function renderHeader() {
