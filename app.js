@@ -396,7 +396,8 @@ function makeStatusCell(row, status) {
 }
 
 function makeActionCell(row, type, id, label, closeLoadPreview = false) {
-  if (isTeacherAccount()) {
+  const load = type === "load" ? state.loads.find((item) => item.id === id) : null;
+  if (isTeacherAccount() && !canManageLoad(load)) {
     row.append(document.createElement("td"));
     return;
   }
@@ -413,7 +414,8 @@ function makeActionCell(row, type, id, label, closeLoadPreview = false) {
   edit.type = "button";
   edit.setAttribute("aria-label", `Edit ${label}`);
   edit.title = `Edit ${label}`;
-  edit.textContent = "✎";
+  edit.textContent = type === "load" ? "Edit" : "✎";
+  if (type === "load") edit.classList.add("row-action-text");
   edit.addEventListener("click", () => {
     closeLoadDialogs();
     type === "teacher" ? openTeacherDialog(id) : openLoadDialog(id);
@@ -425,7 +427,8 @@ function makeActionCell(row, type, id, label, closeLoadPreview = false) {
     remove.type = "button";
     remove.setAttribute("aria-label", `Delete ${label}`);
     remove.title = `Delete ${label}`;
-    remove.textContent = "×";
+    remove.textContent = type === "load" ? "Delete" : "×";
+    if (type === "load") remove.classList.add("row-action-text");
     remove.addEventListener("click", () => {
       closeLoadDialogs();
       type === "teacher" ? deleteTeacher(id) : deleteLoad(id);
@@ -451,6 +454,10 @@ function isAdminAccount() {
 
 function currentTeacherId() {
   return isTeacherAccount() ? state.currentAccount.teacherId : "";
+}
+
+function canManageLoad(load) {
+  return isAdminAccount() || (isTeacherAccount() && load?.teacherId === currentTeacherId());
 }
 
 function visibleLoads() {
@@ -1381,8 +1388,9 @@ function openTeacherDialog(teacherId) {
 }
 
 function openLoadDialog(loadId, selectedTeacherId = "") {
-  if (isTeacherAccount() && loadId) {
-    showToast("Teachers can add loads, but only the admin can edit an existing assignment.", "error");
+  const load = state.loads.find((item) => item.id === loadId);
+  if (loadId && !canManageLoad(load)) {
+    showToast("You can only edit teaching loads assigned to your own profile.", "error");
     return;
   }
   if (!isAdminAccount() && !isTeacherAccount()) {
@@ -1394,7 +1402,6 @@ function openLoadDialog(loadId, selectedTeacherId = "") {
     switchView("teachers");
     return;
   }
-  const load = state.loads.find((item) => item.id === loadId);
   const teacherSelect = document.querySelector("#load-teacher");
   teacherSelect.replaceChildren();
   const teachersForLoad = isTeacherAccount()
@@ -1519,8 +1526,9 @@ function saveLoad(event) {
     minutes,
     schedule: String(form.get("schedule") ?? "").trim(),
   };
-  if (isTeacherAccount() && (id || record.teacherId !== currentTeacherId())) {
-    showToast("You can only assign teaching loads to your own profile.", "error");
+  if (isTeacherAccount() && (record.teacherId !== currentTeacherId()
+    || (id && !canManageLoad(state.loads.find((load) => load.id === id))))) {
+    showToast("You can only add or edit teaching loads assigned to your own profile.", "error");
     return;
   }
   const selectedScheduleOption = document.querySelector("#load-schedule").selectedOptions[0];
@@ -1631,11 +1639,11 @@ function deleteTeacher(id) {
 }
 
 function deleteLoad(id) {
-  if (!isAdminAccount()) {
-    showToast("Only the admin can edit or delete teaching assignments.", "error");
+  const load = state.loads.find((item) => item.id === id);
+  if (!canManageLoad(load)) {
+    showToast("You can only delete teaching loads assigned to your own profile.", "error");
     return;
   }
-  const load = state.loads.find((item) => item.id === id);
   if (!load || !window.confirm(`Delete the ${load.subject} assignment for ${teacherName(load.teacherId)}?`)) return;
   const previousLoads = state.loads;
   const previousSubstitutionPlans = state.substitutionPlans;

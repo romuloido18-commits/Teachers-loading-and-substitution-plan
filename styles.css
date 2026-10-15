@@ -186,6 +186,7 @@ td { height: 56px; padding: 8px 12px; border-top: 1px solid #f0f2f0; color: #556
 .row-action { display: grid; width: 27px; height: 27px; place-items: center; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #7b8980; font-size: 13px; }
 .row-action:hover { border-color: #e7ece7; background: #f6f9f6; color: var(--green); }
 .row-action.delete:hover { color: #ad5550; }
+.row-action-text { display: inline-flex; width: auto; min-width: 44px; height: 28px; padding: 0 8px; border-color: #e7ece7; background: #fff; font-size: 10px; font-weight: 600; white-space: nowrap; }
 .empty-state { display: none; min-height: 230px; align-items: center; flex-direction: column; justify-content: center; padding: 24px; text-align: center; }
 .empty-state.visible { display: flex; }
 .compact-empty { min-height: 201px; }
