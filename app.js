@@ -478,6 +478,13 @@ function visibleSubstitutionPlans() {
     !teacherId || plan.submittedBy === state.currentAccount.id || plan.leaveTeacherId === teacherId);
 }
 
+function canManageSubstitutionPlan(plan) {
+  return isAdminAccount() || (isTeacherAccount()
+    && plan?.status === "pending"
+    && plan.submittedBy === state.currentAccount.id
+    && plan.leaveTeacherId === currentTeacherId());
+}
+
 function render() {
   renderHeader();
   renderStats();
@@ -855,28 +862,48 @@ function renderSubstitutionPlans() {
     preview.textContent = "Print preview";
     preview.addEventListener("click", () => openSubstitutionPlanPreview(plan.id));
     actions.append(preview);
-    if (isAdminAccount()) {
-      if (plan.status === "pending") {
-        actions.append(
-          makePlanReviewButton(plan, "approved", "Approve proposal", "✓"),
-          makePlanReviewButton(plan, "rejected", "Reject proposal", "×"),
-        );
-      }
+    if (isAdminAccount() && plan.status === "pending") {
+      actions.append(
+        makePlanReviewButton(plan, "approved", "Approve proposal", "✓"),
+        makePlanReviewButton(plan, "rejected", "Reject proposal", "×"),
+      );
+    }
+    if (canManageSubstitutionPlan(plan)) {
+      const editableByTeacher = isTeacherAccount();
       const edit = document.createElement("button");
-      edit.className = "row-action";
+      edit.className = `row-action${editableByTeacher ? " row-action-text" : ""}`;
       edit.type = "button";
       edit.setAttribute("aria-label", `Edit substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
       edit.title = "Edit substitution plan";
-      edit.textContent = "✎";
+      edit.textContent = editableByTeacher ? "Edit" : "✎";
       edit.addEventListener("click", () => openSubstitutionDialog(plan.id));
       const remove = document.createElement("button");
-      remove.className = "row-action delete";
+      remove.className = `row-action delete${editableByTeacher ? " row-action-text" : ""}`;
       remove.type = "button";
       remove.setAttribute("aria-label", `Delete substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
       remove.title = "Delete substitution plan";
-      remove.textContent = "×";
+      remove.textContent = editableByTeacher ? "Delete" : "×";
       remove.addEventListener("click", () => deleteSubstitutionPlan(plan.id));
       actions.append(edit, remove);
+    }
+    if (isAdminAccount()) {
+      if (!canManageSubstitutionPlan(plan)) {
+        const edit = document.createElement("button");
+        edit.className = "row-action";
+        edit.type = "button";
+        edit.setAttribute("aria-label", `Edit substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
+        edit.title = "Edit substitution plan";
+        edit.textContent = "✎";
+        edit.addEventListener("click", () => openSubstitutionDialog(plan.id));
+        const remove = document.createElement("button");
+        remove.className = "row-action delete";
+        remove.type = "button";
+        remove.setAttribute("aria-label", `Delete substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
+        remove.title = "Delete substitution plan";
+        remove.textContent = "×";
+        remove.addEventListener("click", () => deleteSubstitutionPlan(plan.id));
+        actions.append(edit, remove);
+      }
     }
     actionsCell.append(actions);
     row.append(actionsCell);
@@ -1245,11 +1272,11 @@ function populateSubstitutionFilters() {
 }
 
 function openSubstitutionDialog(planId = "") {
-  if (isTeacherAccount() && planId) {
-    showToast("Submitted coverage proposals are reviewed by the admin.", "error");
+  const plan = state.substitutionPlans.find((item) => item.id === planId);
+  if (planId && !canManageSubstitutionPlan(plan)) {
+    showToast("You can only edit your own pending coverage proposals.", "error");
     return;
   }
-  const plan = state.substitutionPlans.find((item) => item.id === planId);
   state.editingSubstitutionPlanId = plan?.id ?? "";
   const form = document.querySelector("#substitution-form");
   form.reset();
@@ -1422,8 +1449,9 @@ function saveSubstitutionPlan(event) {
     return;
   }
   const isEditing = Boolean(state.editingSubstitutionPlanId);
-  if (isTeacherAccount() && isEditing) {
-    showToast("Submitted coverage proposals are reviewed by the admin.", "error");
+  const existingPlan = state.substitutionPlans.find((item) => item.id === state.editingSubstitutionPlanId);
+  if (isEditing && !canManageSubstitutionPlan(existingPlan)) {
+    showToast("You can only edit your own pending coverage proposals.", "error");
     return;
   }
   const form = new FormData(event.currentTarget);
@@ -1490,10 +1518,9 @@ function saveSubstitutionPlan(event) {
     startDate,
     endDate,
     loadIds,
-    submittedBy: isTeacherAccount() ? state.currentAccount.id : state.substitutionPlans
-      .find((item) => item.id === state.editingSubstitutionPlanId)?.submittedBy,
+    submittedBy: isTeacherAccount() ? state.currentAccount.id : existingPlan?.submittedBy,
     status: isTeacherAccount() ? "pending" : state.editingSubstitutionPlanId
-      ? state.substitutionPlans.find((item) => item.id === state.editingSubstitutionPlanId)?.status ?? "approved"
+      ? existingPlan?.status ?? "approved"
       : "approved",
     submittedAt: isTeacherAccount() ? new Date().toISOString() : undefined,
   };
@@ -1516,11 +1543,11 @@ function saveSubstitutionPlan(event) {
 }
 
 function deleteSubstitutionPlan(id) {
-  if (!isAdminAccount()) {
-    showToast("Only the admin can delete or manage substitution plans.", "error");
+  const plan = state.substitutionPlans.find((item) => item.id === id);
+  if (!canManageSubstitutionPlan(plan)) {
+    showToast("You can only delete your own pending coverage proposals.", "error");
     return;
   }
-  const plan = state.substitutionPlans.find((item) => item.id === id);
   if (!plan || !window.confirm("Delete this substitution plan?")) return;
   const previousPlans = state.substitutionPlans;
   state.substitutionPlans = previousPlans.filter((plan) => plan.id !== id);
