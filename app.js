@@ -395,11 +395,16 @@ function makeStatusCell(row, status) {
   row.append(cell);
 }
 
-function makeActionCell(row, type, id, label) {
+function makeActionCell(row, type, id, label, closeLoadPreview = false) {
   if (isTeacherAccount()) {
     row.append(document.createElement("td"));
     return;
   }
+  const closeLoadDialogs = () => {
+    if (!closeLoadPreview) return;
+    if (elements.teacherLoadPreview.open) elements.teacherLoadPreview.close();
+    if (elements.loadDialog.open) elements.loadDialog.close();
+  };
   const cell = document.createElement("td");
   const actions = document.createElement("div");
   actions.className = "row-actions";
@@ -409,7 +414,10 @@ function makeActionCell(row, type, id, label) {
   edit.setAttribute("aria-label", `Edit ${label}`);
   edit.title = `Edit ${label}`;
   edit.textContent = "✎";
-  edit.addEventListener("click", () => type === "teacher" ? openTeacherDialog(id) : openLoadDialog(id));
+  edit.addEventListener("click", () => {
+    closeLoadDialogs();
+    type === "teacher" ? openTeacherDialog(id) : openLoadDialog(id);
+  });
   actions.append(edit);
   if (!(type === "teacher" && state.currentAccount?.role === "teacher")) {
     const remove = document.createElement("button");
@@ -418,7 +426,10 @@ function makeActionCell(row, type, id, label) {
     remove.setAttribute("aria-label", `Delete ${label}`);
     remove.title = `Delete ${label}`;
     remove.textContent = "×";
-    remove.addEventListener("click", () => type === "teacher" ? deleteTeacher(id) : deleteLoad(id));
+    remove.addEventListener("click", () => {
+      closeLoadDialogs();
+      type === "teacher" ? deleteTeacher(id) : deleteLoad(id);
+    });
     actions.append(remove);
   }
   cell.append(actions);
@@ -1578,6 +1589,7 @@ function previewTeacherLoads() {
     makeCell(row, [load.period ? `Period ${load.period}` : "", load.schedule || periodTime(load.period, load.groupName)].filter(Boolean).join(" · ") || "—");
     makeCell(row, formatLoadDays(load.days));
     makeCell(row, formatMinutes(load.minutes));
+    makeActionCell(row, "load", load.id, `${load.subject} assignment`, true);
     tableBody.append(row);
   });
   document.querySelector("#teacher-load-preview-empty").hidden = loads.length > 0;

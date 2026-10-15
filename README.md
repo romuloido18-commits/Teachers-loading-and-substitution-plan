@@ -4,6 +4,8 @@ A lightweight, browser-based school personnel and teaching-load tracker. Add tea
 
 Teaching loads are automatically ordered by teacher, earliest selected weekday, and scheduled start time.
 
+Admins can edit or delete assignments from the **Assignment directory**. While editing an assignment, choose **Preview teacher loads** to view that teacher's assignment list and edit or delete loads directly from the list.
+
 Use **Substitution plans** in the sidebar to assign an Active teacher to selected teaching loads for a teacher marked On leave. If no leave teacher appears, update the teacher's employment status in **Teachers**. Filter assignments by the configured group (such as Morning shift or Afternoon shift) and Period 1–7; with **All periods** selected, the available-substitute list includes teachers free for at least one matching load, and selecting a specific period or load narrows it to that time. Displayed times follow the current Groups & periods settings; loads that conflict with the substitute's existing teaching or overlapping substitution-plan schedule are unavailable. Use **Print preview** on a saved plan's row to inspect its details, then select **Print this plan** to open the browser print preview. Edit or delete a saved plan from its row as well. **Print plan** prints a draft before saving. Each saved plan records its coverage dates and is saved in this browser.
 
 The interface uses Arial Narrow at 16px throughout.
