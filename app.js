@@ -43,6 +43,7 @@ const state = {
   teachers: [],
   loads: [],
   substitutionPlans: [],
+  leaveApplications: [],
   settings: { ...DEFAULT_SETTINGS },
   activeView: "overview",
   teacherQuery: "",
@@ -109,7 +110,7 @@ function recordAccountLogin(account, errorElement = null) {
 
 function migrateTeacherAccountRecords() {
   if (localStorage.getItem(ACCOUNT_MIGRATION_KEY) === "complete") return true;
-  let schoolRecords = { teachers: [], loads: [], substitutionPlans: [], settings: {} };
+  let schoolRecords = { teachers: [], loads: [], substitutionPlans: [], leaveApplications: [], settings: {} };
   const savedSchoolRecords = localStorage.getItem(STORAGE_KEY);
   if (savedSchoolRecords) {
     schoolRecords = JSON.parse(savedSchoolRecords);
@@ -118,6 +119,9 @@ function migrateTeacherAccountRecords() {
     }
     schoolRecords.substitutionPlans = Array.isArray(schoolRecords.substitutionPlans)
       ? schoolRecords.substitutionPlans
+      : [];
+    schoolRecords.leaveApplications = Array.isArray(schoolRecords.leaveApplications)
+      ? schoolRecords.leaveApplications
       : [];
   }
   let changed = false;
@@ -156,6 +160,7 @@ function loadState() {
   state.teachers = [];
   state.loads = [];
   state.substitutionPlans = [];
+  state.leaveApplications = [];
   state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -166,6 +171,7 @@ function loadState() {
     }
     state.teachers = parsed.teachers;
     state.substitutionPlans = Array.isArray(parsed.substitutionPlans) ? parsed.substitutionPlans : [];
+    state.leaveApplications = Array.isArray(parsed.leaveApplications) ? parsed.leaveApplications : [];
     state.loads = parsed.loads.map((load) => {
       if (load.minutes !== undefined) return { ...load, minutes: Number(load.minutes) };
       const legacyHours = Number(load.hours);
@@ -198,6 +204,7 @@ function saveState() {
       teachers: state.teachers,
       loads: state.loads,
       substitutionPlans: state.substitutionPlans,
+      leaveApplications: state.leaveApplications,
       settings: state.settings,
     }));
     return true;
@@ -477,6 +484,7 @@ function render() {
   renderTeachers();
   renderLoads();
   renderRecentLoads();
+  renderLeaveApplications();
   renderSubstitutionPlans();
   renderLoginActivity();
   const teacherAccount = isTeacherAccount();
@@ -723,6 +731,75 @@ function renderRecentLoads() {
   });
 }
 
+function visibleLeaveApplications() {
+  const teacherId = currentTeacherId();
+  return state.leaveApplications.filter((application) =>
+    !teacherId || application.teacherId === teacherId);
+}
+
+function renderLeaveApplications() {
+  const tableBody = document.querySelector("#leave-applications-body");
+  const emptyState = document.querySelector("#leave-applications-empty");
+  const teacherAccount = isTeacherAccount();
+  document.querySelector("#apply-for-leave").hidden = !teacherAccount;
+  document.querySelector("#leave-applications-panel").hidden =
+    !teacherAccount && !isAdminAccount();
+  const applications = [...visibleLeaveApplications()].sort((a, b) =>
+    String(b.submittedAt ?? "").localeCompare(String(a.submittedAt ?? "")));
+  tableBody.replaceChildren();
+  setEmptyState(tableBody, emptyState, applications.length > 0);
+  document.querySelector("#leave-application-caption").textContent =
+    `${applications.length} ${applications.length === 1 ? "leave application" : "leave applications"}`;
+  document.querySelector("#leave-applications-empty strong").textContent =
+    teacherAccount ? "No leave applications yet" : "No leave applications to review";
+  document.querySelector("#leave-applications-empty p").textContent = teacherAccount
+    ? "Apply for leave by selecting the date range you will be away."
+    : "Teacher leave applications will appear here for admin review.";
+  applications.forEach((application) => {
+    const teacher = state.teachers.find((item) => item.id === application.teacherId);
+    const row = document.createElement("tr");
+    makeCell(row, teacher?.name ?? "Unknown teacher", "table-primary");
+    makeCell(row, `${formatDate(application.startDate)} – ${formatDate(application.endDate)}`);
+    makeCell(row, application.submittedAt
+      ? new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short" })
+        .format(new Date(application.submittedAt))
+      : "—");
+    const status = application.status === "approved" ? "Approved"
+      : application.status === "rejected" ? "Rejected" : "Pending admin review";
+    const statusCell = document.createElement("td");
+    const statusBadge = document.createElement("span");
+    const statusClass = application.status === "approved" ? "approved"
+      : application.status === "rejected" ? "rejected" : "pending";
+    statusBadge.className = `status-badge substitution-status-${statusClass}`;
+    statusBadge.textContent = status;
+    statusCell.append(statusBadge);
+    row.append(statusCell);
+    const actionsCell = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    if (isAdminAccount() && application.status === "pending") {
+      actions.append(
+        makeLeaveApplicationReviewButton(application, "approved", "Approve leave application", "✓"),
+        makeLeaveApplicationReviewButton(application, "rejected", "Reject leave application", "×"),
+      );
+    }
+    actionsCell.append(actions);
+    row.append(actionsCell);
+    tableBody.append(row);
+  });
+}
+
+function makeLeaveApplicationReviewButton(application, status, label, mark) {
+  const button = document.createElement("button");
+  button.className = `row-action${status === "rejected" ? " delete" : ""}`;
+  button.type = "button";
+  button.setAttribute("aria-label", `${label} for ${teacherName(application.teacherId)}`);
+  button.title = label;
+  button.textContent = mark;
+  button.addEventListener("click", () => reviewLeaveApplication(application.id, status));
+  return button;
+}
+
 function renderSubstitutionPlans() {
   const tableBody = document.querySelector("#substitution-plans-body");
   const emptyState = document.querySelector("#substitution-plans-empty");
@@ -737,7 +814,7 @@ function renderSubstitutionPlans() {
   document.querySelector("#substitution-plans-empty strong").textContent =
     teacherAccount ? "No coverage proposals yet" : "No substitution plans yet";
   document.querySelector("#substitution-plans-empty p").textContent = teacherAccount
-    ? "Submit a coverage proposal when your employment status is marked On leave."
+    ? "Submit a coverage proposal after your leave application is approved."
     : "Create a plan to assign teaching loads to an available teacher.";
   document.querySelector("#substitution-plans-empty button").textContent =
     teacherAccount ? "Submit coverage proposal" : "Create substitution plan";
@@ -863,6 +940,91 @@ function reviewSubstitutionPlan(planId, status) {
   }
   render();
   showToast(status === "approved" ? "Substitution proposal approved." : "Substitution proposal rejected.");
+}
+
+function openLeaveApplicationDialog() {
+  if (!isTeacherAccount()) {
+    showToast("Only a teacher account can apply for leave.", "error");
+    return;
+  }
+  if (!state.teachers.some((teacher) => teacher.id === currentTeacherId())) {
+    showToast("Your teacher profile could not be found. Contact the admin before applying for leave.", "error");
+    return;
+  }
+  document.querySelector("#leave-application-form").reset();
+  document.querySelector("#leave-application-end-date").min = "";
+  document.querySelector("#leave-application-dialog").showModal();
+  document.querySelector("#leave-application-start-date").focus();
+}
+
+function saveLeaveApplication(event) {
+  event.preventDefault();
+  if (!isTeacherAccount()) {
+    showToast("Only a teacher account can apply for leave.", "error");
+    return;
+  }
+  const form = new FormData(event.currentTarget);
+  const startDate = String(form.get("startDate") ?? "");
+  const endDate = String(form.get("endDate") ?? "");
+  const teacherId = currentTeacherId();
+  if (!state.teachers.some((teacher) => teacher.id === teacherId)) {
+    showToast("Your teacher profile could not be found. Contact the admin before applying for leave.", "error");
+    return;
+  }
+  if (!startDate || !endDate || startDate > endDate) {
+    showToast("Enter valid leave dates, with the end date on or after the start date.", "error");
+    document.querySelector(startDate ? "#leave-application-end-date" : "#leave-application-start-date").focus();
+    return;
+  }
+  const application = {
+    id: createId(),
+    teacherId,
+    submittedBy: state.currentAccount.id,
+    startDate,
+    endDate,
+    status: "pending",
+    submittedAt: new Date().toISOString(),
+  };
+  const previousApplications = state.leaveApplications;
+  state.leaveApplications = [...previousApplications, application];
+  if (!saveState()) {
+    state.leaveApplications = previousApplications;
+    return;
+  }
+  document.querySelector("#leave-application-dialog").close();
+  render();
+  showToast("Leave application submitted for admin review.");
+}
+
+function reviewLeaveApplication(applicationId, status) {
+  if (!isAdminAccount() || !["approved", "rejected"].includes(status)) {
+    showToast("Only the admin can review leave applications.", "error");
+    return;
+  }
+  const application = state.leaveApplications.find((item) => item.id === applicationId);
+  if (!application || application.status !== "pending") return;
+  const teacher = state.teachers.find((item) => item.id === application.teacherId);
+  if (status === "approved" && !teacher) {
+    showToast("This application cannot be approved because the teacher profile is missing.", "error");
+    return;
+  }
+  const previousApplications = state.leaveApplications;
+  const previousTeachers = state.teachers;
+  state.leaveApplications = previousApplications.map((item) =>
+    item.id === applicationId ? { ...item, status, reviewedAt: new Date().toISOString() } : item);
+  if (status === "approved") {
+    state.teachers = previousTeachers.map((item) =>
+      item.id === application.teacherId ? { ...item, status: "On leave" } : item);
+  }
+  if (!saveState()) {
+    state.leaveApplications = previousApplications;
+    state.teachers = previousTeachers;
+    return;
+  }
+  render();
+  showToast(status === "approved"
+    ? `${teacher.name}'s leave application approved; their status is now On leave.`
+    : "Leave application rejected.");
 }
 
 function switchView(viewName) {
@@ -1623,14 +1785,17 @@ function deleteTeacher(id) {
   const previousTeachers = state.teachers;
   const previousLoads = state.loads;
   const previousSubstitutionPlans = state.substitutionPlans;
+  const previousLeaveApplications = state.leaveApplications;
   state.teachers = state.teachers.filter((item) => item.id !== id);
   state.loads = state.loads.filter((item) => item.teacherId !== id);
   state.substitutionPlans = state.substitutionPlans.filter((plan) =>
     plan.leaveTeacherId !== id && plan.substituteTeacherId !== id);
+  state.leaveApplications = state.leaveApplications.filter((application) => application.teacherId !== id);
   if (!saveState()) {
     state.teachers = previousTeachers;
     state.loads = previousLoads;
     state.substitutionPlans = previousSubstitutionPlans;
+    state.leaveApplications = previousLeaveApplications;
     render();
     return;
   }
@@ -2214,6 +2379,11 @@ function initializeApp() {
     updateSchoolLogoPreview("");
   });
   document.querySelector("#add-substitution-plan").addEventListener("click", () => openSubstitutionDialog());
+  document.querySelector("#apply-for-leave").addEventListener("click", openLeaveApplicationDialog);
+  document.querySelector("#leave-application-form").addEventListener("submit", saveLeaveApplication);
+  document.querySelector("#leave-application-start-date").addEventListener("change", (event) => {
+    document.querySelector("#leave-application-end-date").min = event.currentTarget.value;
+  });
   document.querySelector("#manage-leave-teachers")?.addEventListener("click", () => {
     document.querySelector("#substitution-dialog").close();
     switchView("teachers");

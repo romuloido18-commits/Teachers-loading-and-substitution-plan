@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#eff6ff">
     <title>Teacher Load Manager</title>
-    <link rel="stylesheet" href="styles.css?v=20261015-load-actions">
-    <script src="app.js?v=20261015-load-actions" defer></script>
+    <link rel="stylesheet" href="styles.css?v=20261015-leave-applications">
+    <script src="app.js?v=20261015-leave-applications" defer></script>
   </head>
   <body>
     <main class="login-screen" id="login-screen">
@@ -280,10 +280,23 @@
                 <p class="page-subtitle">Assign available teachers to cover selected loads during leave.</p>
               </div>
               <div class="heading-actions">
+                <button class="button button-secondary" id="apply-for-leave" type="button" hidden><span aria-hidden="true">＋</span> Apply for leave</button>
                 <button class="button button-primary" id="add-substitution-plan" type="button"><span aria-hidden="true">＋</span> Create substitution plan</button>
               </div>
             </div>
-            <p class="privacy-note" id="teacher-substitution-note" hidden>Submit a coverage proposal when your employment status is marked On leave. The admin reviews and approves all plans.</p>
+            <p class="privacy-note" id="teacher-substitution-note" hidden>Apply for leave by selecting a date range. Once the admin approves your application, your profile will be marked On leave and you can submit a coverage proposal.</p>
+            <section class="panel list-panel" id="leave-applications-panel">
+              <div class="list-toolbar">
+                <div><h2>Leave applications</h2><p class="panel-subtitle" id="leave-application-caption">0 leave applications</p></div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>TEACHER</th><th>DATE OF LEAVE</th><th>APPLIED ON</th><th>STATUS</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                  <tbody id="leave-applications-body"></tbody>
+                </table>
+                <div class="empty-state" id="leave-applications-empty"><span class="empty-icon" aria-hidden="true">◷</span><strong>No leave applications yet</strong><p>Apply for leave by selecting the date range you will be away.</p></div>
+              </div>
+            </section>
             <section class="panel list-panel">
               <div class="list-toolbar">
                 <div><h2>Coverage plans</h2><p class="panel-subtitle" id="substitution-plan-caption">0 substitution plans</p></div>
@@ -384,6 +397,17 @@
           </fieldset>
         </div>
         <div class="dialog-actions"><button class="button button-secondary" id="print-substitution-plan" type="button">Print plan</button><button class="button button-secondary" type="button" data-close-dialog>Cancel</button><button class="button button-primary" type="submit">Save substitution plan</button></div>
+      </form>
+    </dialog>
+
+    <dialog class="form-dialog" id="leave-application-dialog" aria-labelledby="leave-application-title">
+      <form id="leave-application-form">
+        <div class="dialog-heading"><div><div class="eyebrow">LEAVE REQUEST</div><h2 id="leave-application-title">Apply for leave</h2><p>Select the date range you will be away. Your application will be sent to the admin for review.</p></div><button class="dialog-close" type="button" data-close-dialog aria-label="Close">×</button></div>
+        <div class="form-grid">
+          <label class="field">Leave starts <span class="required">*</span><input id="leave-application-start-date" name="startDate" type="date" required></label>
+          <label class="field">Leave ends <span class="required">*</span><input id="leave-application-end-date" name="endDate" type="date" required></label>
+        </div>
+        <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Cancel</button><button class="button button-primary" type="submit">Submit leave application</button></div>
       </form>
     </dialog>
 
