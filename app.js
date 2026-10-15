@@ -886,25 +886,6 @@ function renderSubstitutionPlans() {
       remove.addEventListener("click", () => deleteSubstitutionPlan(plan.id));
       actions.append(edit, remove);
     }
-    if (isAdminAccount()) {
-      if (!canManageSubstitutionPlan(plan)) {
-        const edit = document.createElement("button");
-        edit.className = "row-action";
-        edit.type = "button";
-        edit.setAttribute("aria-label", `Edit substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
-        edit.title = "Edit substitution plan";
-        edit.textContent = "✎";
-        edit.addEventListener("click", () => openSubstitutionDialog(plan.id));
-        const remove = document.createElement("button");
-        remove.className = "row-action delete";
-        remove.type = "button";
-        remove.setAttribute("aria-label", `Delete substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
-        remove.title = "Delete substitution plan";
-        remove.textContent = "×";
-        remove.addEventListener("click", () => deleteSubstitutionPlan(plan.id));
-        actions.append(edit, remove);
-      }
-    }
     actionsCell.append(actions);
     row.append(actionsCell);
     tableBody.append(row);
