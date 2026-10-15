@@ -18,14 +18,16 @@ Teachers can create an account with an email address and password. Their profile
 
 ## Supabase setup and publishing
 
-The shared-account feature requires the Supabase project configured in `app.js` and the SQL in `supabase-schema.sql`. Before publishing a cloud-enabled version:
+The shared-account version is published at [Teacher Load Manager](https://romuloido18-commits.github.io/Teachers-loading-and-substitution-plan/). It uses the Supabase project configured in `app.js`; the SQL in `supabase-schema.sql` has been installed, and the Supabase Auth site URL and redirect allowlist are configured for this GitHub Pages address.
 
-1. In the Supabase SQL Editor for the configured project, run the complete `supabase-schema.sql` script. It creates the account profiles, teacher signup trigger, protected school-state table, and role/ownership-checked RPCs.
-2. In Supabase Authentication settings, configure the allowed site URL and email-confirmation redirect for the deployed GitHub Pages URL. Decide whether to require email confirmation.
-3. Create the administrator's account through the registration form, confirm the email if required, then promote it in the SQL Editor by replacing `ADMIN_EMAIL_HERE` in the final commented `UPDATE public.profiles` statement with that account's email. Do not let users self-assign an administrator role.
-4. Publish the updated `index.html`, `app.js`, `styles.css`, and `supabase-schema.sql` to the GitHub Pages repository, then test administrator and teacher accounts on the deployed site.
+To start using the shared system:
 
-The existing GitHub Pages deployment remains browser-local until the new files are published and the Supabase schema is installed. Previous local accounts (including the old `admin` sign-in) are not Supabase accounts and cannot be used to sign in on another device. After publishing, the administrator can sign into the new cloud account on the same browser that has the old records, open **Settings**, and select **Import records from this browser**. This explicitly merges teacher profiles, loads, leave applications, and substitution plans by record ID without replacing existing cloud records. It does not transfer passwords or account logins; teachers must create new email/password accounts. Back up data before importing. Never put a Supabase service-role key in this static app; only the public anon key may be used alongside the database's RLS and RPC restrictions.
+1. Create a new administrator account through **Create a teacher account** on the published site. If email confirmation is enabled in Supabase, confirm the message before signing in.
+2. In the Supabase SQL Editor, promote that account by replacing `ADMIN_EMAIL_HERE` in the final commented `UPDATE public.profiles` statement in `supabase-schema.sql` with its registered email. Do not let users self-assign an administrator role.
+3. Sign in again as the administrator. On the browser that contains the old records, open **Settings** and select **Import records from this browser**. This explicitly merges teacher profiles, loads, leave applications, and substitution plans by record ID without replacing existing cloud records.
+4. Teachers should create their own new email/password accounts from the published site. Sign in with those same credentials on other devices to access the shared records.
+
+Previous browser-local accounts (including the old `admin` sign-in) are not Supabase accounts and cannot be used on another device. Importing records does not transfer passwords or account logins. Back up data before importing. Never put a Supabase service-role key in this static app; only the public anon key may be used alongside the database's RLS and RPC restrictions.
 
 ## Run
 
