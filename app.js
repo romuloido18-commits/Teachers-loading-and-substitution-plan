@@ -2,8 +2,10 @@
 
 const STORAGE_KEY = "teacher-load-manager-v1";
 const LOGIN_SESSION_KEY = "teacher-load-manager-authenticated";
+const ACCOUNTS_KEY = "teacher-load-manager-accounts-v1";
 const LOGIN_USERNAME = "admin";
 const LOGIN_PASSWORD = "Admin@1831";
+let accounts = [];
 let appInitialized = false;
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const DEFAULT_PERIOD_TIMES = Object.fromEntries(
@@ -48,6 +50,7 @@ const state = {
   editingSubstitutionPlanId: "",
   settingsDraftGroupPeriodTimes: null,
   settingsPeriodGroup: "",
+  currentAccount: null,
 };
 
 const elements = {
@@ -65,17 +68,68 @@ function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `record-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function loadState() {
+function accountStorageKey(account) {
+  return account?.role === "teacher" ? `${STORAGE_KEY}:account:${account.id}` : STORAGE_KEY;
+}
+
+function loadAccounts() {
+  const saved = localStorage.getItem(ACCOUNTS_KEY);
+  if (!saved) return [];
+  const parsed = JSON.parse(saved);
+  if (!Array.isArray(parsed) || parsed.some((account) =>
+    !account || typeof account.id !== "string" || typeof account.username !== "string"
+    || !["teacher", "admin"].includes(account.role) || !Array.isArray(account.loginHistory))) {
+    throw new Error("Saved teacher accounts have an invalid format.");
+  }
+  return parsed;
+}
+
+function saveAccounts(nextAccounts = accounts, errorElement = null) {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(nextAccounts));
+    accounts = nextAccounts;
+    return true;
+  } catch (error) {
+    if (errorElement) displayLoginError(errorElement, `Couldn't save teacher accounts in this browser: ${error.message}`);
+    else showToast(`Couldn't save teacher accounts in this browser: ${error.message}`, "error");
+    return false;
+  }
+}
+
+function recordAccountLogin(account, errorElement = null) {
+  const timestamp = new Date().toISOString();
+  const updatedAccount = {
+    ...account,
+    loginHistory: [...(account.loginHistory ?? []), timestamp],
+    loginCount: (Number(account.loginCount) || 0) + 1,
+    lastLoginAt: timestamp,
+  };
+  const nextAccounts = accounts.filter((item) => item.id !== account.id);
+  nextAccounts.push(updatedAccount);
+  if (!saveAccounts(nextAccounts, errorElement)) return null;
+  return updatedAccount;
+}
+
+function loadState() {
+  state.teachers = [];
+  state.loads = [];
+  state.substitutionPlans = [];
+  state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  try {
+    const saved = localStorage.getItem(accountStorageKey(state.currentAccount));
     if (!saved) return;
     const parsed = JSON.parse(saved);
     if (!parsed || !Array.isArray(parsed.teachers) || !Array.isArray(parsed.loads)) {
       throw new Error("Saved school records have an invalid format.");
     }
-    state.teachers = parsed.teachers;
-    state.substitutionPlans = Array.isArray(parsed.substitutionPlans) ? parsed.substitutionPlans : [];
-    state.loads = parsed.loads.map((load) => {
+    const teacherId = state.currentAccount?.role === "teacher" ? state.currentAccount.teacherId : "";
+    state.teachers = teacherId
+      ? parsed.teachers.filter((teacher) => teacher.id === teacherId)
+      : parsed.teachers;
+    state.substitutionPlans = state.currentAccount?.role === "teacher"
+      ? []
+      : Array.isArray(parsed.substitutionPlans) ? parsed.substitutionPlans : [];
+    state.loads = parsed.loads.filter((load) => !teacherId || load.teacherId === teacherId).map((load) => {
       if (load.minutes !== undefined) return { ...load, minutes: Number(load.minutes) };
       const legacyHours = Number(load.hours);
       const { hours, ...legacyLoad } = load;
@@ -103,7 +157,7 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(accountStorageKey(state.currentAccount), JSON.stringify({
       teachers: state.teachers,
       loads: state.loads,
       substitutionPlans: state.substitutionPlans,
@@ -315,14 +369,17 @@ function makeActionCell(row, type, id, label) {
   edit.title = `Edit ${label}`;
   edit.textContent = "✎";
   edit.addEventListener("click", () => type === "teacher" ? openTeacherDialog(id) : openLoadDialog(id));
-  const remove = document.createElement("button");
-  remove.className = "row-action delete";
-  remove.type = "button";
-  remove.setAttribute("aria-label", `Delete ${label}`);
-  remove.title = `Delete ${label}`;
-  remove.textContent = "×";
-  remove.addEventListener("click", () => type === "teacher" ? deleteTeacher(id) : deleteLoad(id));
-  actions.append(edit, remove);
+  actions.append(edit);
+  if (!(type === "teacher" && state.currentAccount?.role === "teacher")) {
+    const remove = document.createElement("button");
+    remove.className = "row-action delete";
+    remove.type = "button";
+    remove.setAttribute("aria-label", `Delete ${label}`);
+    remove.title = `Delete ${label}`;
+    remove.textContent = "×";
+    remove.addEventListener("click", () => type === "teacher" ? deleteTeacher(id) : deleteLoad(id));
+    actions.append(remove);
+  }
   cell.append(actions);
   row.append(cell);
 }
@@ -339,10 +396,79 @@ function render() {
   renderLoads();
   renderRecentLoads();
   renderSubstitutionPlans();
+  renderLoginActivity();
+  const isTeacherAccount = state.currentAccount?.role === "teacher";
+  document.querySelector("#add-teacher").hidden = isTeacherAccount;
+  document.querySelectorAll("[data-add-teacher]").forEach((button) => { button.hidden = isTeacherAccount; });
+  document.querySelector("#teachers-title").textContent = isTeacherAccount ? "My account" : "Teachers";
+  document.querySelector("#teacher-page-eyebrow").textContent = isTeacherAccount ? "MY ACCOUNT" : "SCHOOL PERSONNEL";
+  document.querySelector("#teacher-list-title").textContent = isTeacherAccount ? "My teacher profile" : "Teacher directory";
+  document.querySelector("#teacher-page-subtitle").textContent = isTeacherAccount
+    ? "View and update your profile and review your assigned minutes."
+    : "Manage teacher profiles and review their assigned minutes.";
+  document.querySelector("#teacher-search").closest(".search-box").hidden = isTeacherAccount;
+  if (isTeacherAccount) {
+    document.querySelector("#overview-eyebrow-label").textContent = "MY TEACHING LOAD";
+    document.querySelector("#page-title").textContent = "Your dashboard";
+    document.querySelector("#view-overview .page-subtitle").textContent =
+      "Manage your teaching assignments and account details.";
+    document.querySelector("#view-overview .stat-card:nth-child(1) .stat-caption").textContent = "Your teacher account";
+    document.querySelector("#view-overview .stat-card:nth-child(2) .stat-caption").textContent = "Your saved assignments";
+    document.querySelector("#view-overview .stat-card:nth-child(3) .stat-caption").textContent = "Your weekly minutes";
+    document.querySelector(".getting-started h2").textContent = "Your teaching loads";
+    document.querySelector(".getting-started > p").textContent =
+      "Review your teacher profile, then add assignments for your classes.";
+    const [profileStep, loadStep] = document.querySelectorAll(".setup-step");
+    profileStep.querySelector("strong").textContent = "Review your profile";
+    profileStep.querySelector("small").textContent = "Check your teacher details";
+    loadStep.querySelector("strong").textContent = "Add a teaching load";
+    loadStep.querySelector("small").textContent = "Record your subjects and classes";
+  } else {
+    document.querySelector("#overview-eyebrow-label").textContent = "SCHOOL PERSONNEL";
+    document.querySelector("#page-title").textContent = "Good day. ✳";
+    document.querySelector("#view-overview .page-subtitle").textContent =
+      "A clear view of your teachers and their teaching assignments.";
+    document.querySelector("#view-overview .stat-card:nth-child(1) .stat-caption").textContent =
+      "Profiles in your school records";
+    document.querySelector("#view-overview .stat-card:nth-child(2) .stat-caption").textContent =
+      "Across all teacher profiles";
+    document.querySelector("#view-overview .stat-card:nth-child(3) .stat-caption").textContent =
+      "Combined minutes per week";
+    document.querySelector(".getting-started h2").textContent = "Set up your school records";
+    document.querySelector(".getting-started > p").textContent =
+      "Add your teacher profiles first, then record each learning area and class assignment.";
+    const [profileStep, loadStep] = document.querySelectorAll(".setup-step");
+    profileStep.querySelector("strong").textContent = "Add teachers";
+    profileStep.querySelector("small").textContent = "Create a profile for each teacher";
+    loadStep.querySelector("strong").textContent = "Assign teaching loads";
+    loadStep.querySelector("small").textContent = "Connect classes and learning areas";
+  }
   document.querySelector("#teacher-nav-count").textContent = String(state.teachers.length);
   document.querySelector("#load-nav-count").textContent = String(state.loads.length);
   document.querySelector("#teacher-dashboard-load-count").textContent = `${state.loads.length} ${state.loads.length === 1 ? "assignment" : "assignments"}`;
   document.querySelector("#teacher-dashboard-substitution-count").textContent = `${state.substitutionPlans.length} ${state.substitutionPlans.length === 1 ? "plan" : "plans"}`;
+}
+
+function renderLoginActivity() {
+  const body = document.querySelector("#account-login-body");
+  const empty = document.querySelector("#account-login-empty");
+  const history = state.currentAccount?.loginHistory ?? [];
+  setEmptyState(body, empty, history.length > 0);
+  document.querySelector("#account-login-caption").textContent = history.length
+    ? `${Number(state.currentAccount?.loginCount) || history.length} successful ${Number(state.currentAccount?.loginCount) === 1 ? "sign-in" : "sign-ins"} recorded`
+    : "No sign-ins recorded";
+  [...history].reverse().forEach((timestamp) => {
+    const row = document.createElement("tr");
+    const dateCell = document.createElement("td");
+    const date = new Date(timestamp);
+    dateCell.textContent = Number.isNaN(date.getTime())
+      ? "Unknown date"
+      : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+    row.append(dateCell);
+    makeCell(row, state.currentAccount?.username ?? "—");
+    makeCell(row, "Successful sign-in");
+    body.append(row);
+  });
 }
 
 function renderHeader() {
@@ -483,6 +609,17 @@ function renderRecentLoads() {
 function renderSubstitutionPlans() {
   const tableBody = document.querySelector("#substitution-plans-body");
   const emptyState = document.querySelector("#substitution-plans-empty");
+  const teacherAccount = state.currentAccount?.role === "teacher";
+  document.querySelector("#teacher-substitution-note").hidden = !teacherAccount;
+  document.querySelector("#view-substitutions .list-panel").hidden = teacherAccount;
+  document.querySelector("#add-substitution-plan").hidden = teacherAccount;
+  document.querySelectorAll("[data-add-substitution-plan]").forEach((button) => { button.hidden = teacherAccount; });
+  if (teacherAccount) {
+    setEmptyState(tableBody, emptyState, false);
+    document.querySelector("#substitution-print-summary").textContent = "";
+    document.querySelector("#substitution-print-loads").replaceChildren();
+    return;
+  }
   const plans = [...state.substitutionPlans].sort((a, b) => a.startDate.localeCompare(b.startDate));
   setEmptyState(tableBody, emptyState, plans.length > 0);
   document.querySelector("#substitution-plan-caption").textContent =
@@ -535,7 +672,9 @@ function switchView(viewName) {
   state.activeView = viewName;
   elements.views.forEach((view) => view.classList.toggle("active", view.id === `view-${viewName}`));
   elements.navLinks.forEach((link) => link.classList.toggle("active", Boolean(link.dataset.view) && link.dataset.view === viewName));
-  const label = { overview: "Overview", teachers: "Teachers", loads: "Teaching loads", substitutions: "Substitution plans" }[viewName];
+  const label = viewName === "teachers" && state.currentAccount?.role === "teacher"
+    ? "My account"
+    : { overview: "Overview", teachers: "Teachers", loads: "Teaching loads", substitutions: "Substitution plans" }[viewName];
   elements.breadcrumb.textContent = label;
   document.title = `${label} · Teacher Load Manager`;
   closeSidebar();
@@ -744,6 +883,10 @@ function populateSubstitutionFilters() {
 }
 
 function openSubstitutionDialog(planId = "") {
+  if (state.currentAccount?.role === "teacher") {
+    showToast("Substitution plans are managed from the school admin account.", "error");
+    return;
+  }
   const plan = state.substitutionPlans.find((item) => item.id === planId);
   state.editingSubstitutionPlanId = plan?.id ?? "";
   const form = document.querySelector("#substitution-form");
@@ -901,6 +1044,10 @@ function openSubstitutionPlanPreview(planId) {
 
 function saveSubstitutionPlan(event) {
   event.preventDefault();
+  if (state.currentAccount?.role === "teacher") {
+    showToast("Substitution plans are managed from the school admin account.", "error");
+    return;
+  }
   const isEditing = Boolean(state.editingSubstitutionPlanId);
   const form = new FormData(event.currentTarget);
   const leaveTeacherId = String(form.get("leaveTeacherId") ?? "");
@@ -994,6 +1141,11 @@ function deleteSubstitutionPlan(id) {
 
 function openTeacherDialog(teacherId) {
   const teacher = state.teachers.find((item) => item.id === teacherId);
+  if (state.currentAccount?.role === "teacher"
+    && (!teacher || teacher.id !== state.currentAccount.teacherId)) {
+    showToast("Teacher accounts can only update their own profile.", "error");
+    return;
+  }
   document.querySelector("#teacher-form").reset();
   document.querySelector("#teacher-id").value = teacher?.id ?? "";
   document.querySelector("#teacher-name").value = teacher?.name ?? "";
@@ -1076,6 +1228,10 @@ function saveTeacher(event) {
   event.preventDefault();
   const form = new FormData(event.currentTarget);
   const id = document.querySelector("#teacher-id").value;
+  if (state.currentAccount?.role === "teacher" && id !== state.currentAccount.teacherId) {
+    showToast("Teacher accounts can only update their own profile.", "error");
+    return;
+  }
   const employeeId = String(form.get("employeeId") ?? "").trim();
   if (employeeId && state.teachers.some((teacher) => teacher.id !== id && teacher.employeeId?.toLocaleLowerCase() === employeeId.toLocaleLowerCase())) {
     showToast("That employee ID is already used by another teacher.", "error");
@@ -1125,6 +1281,10 @@ function saveLoad(event) {
     minutes,
     schedule: String(form.get("schedule") ?? "").trim(),
   };
+  if (state.currentAccount?.role === "teacher" && record.teacherId !== state.currentAccount.teacherId) {
+    showToast("You can only assign teaching loads to your own profile.", "error");
+    return;
+  }
   const selectedScheduleOption = document.querySelector("#load-schedule").selectedOptions[0];
   if (selectedScheduleOption?.dataset.groupName) {
     record.groupName = selectedScheduleOption.dataset.groupName;
@@ -1200,6 +1360,10 @@ function previewTeacherLoads() {
 function deleteTeacher(id) {
   const teacher = state.teachers.find((item) => item.id === id);
   if (!teacher) return;
+  if (state.currentAccount?.role === "teacher" && id === state.currentAccount.teacherId) {
+    showToast("Your teacher profile cannot be deleted from a teacher account.", "error");
+    return;
+  }
   const assignedCount = teacherLoads(id).length;
   const message = assignedCount
     ? `${teacher.name} has ${assignedCount} teaching ${assignedCount === 1 ? "assignment" : "assignments"}. Delete the teacher and all of those assignments?`
@@ -1513,32 +1677,161 @@ function enterApplication() {
   if (!appInitialized) {
     initializeApp();
     appInitialized = true;
+  } else {
+    state.activeView = "overview";
+    loadState();
+    render();
+    switchView("overview");
   }
+}
+
+function setLoginMode(registering) {
+  document.querySelector("#login-form").hidden = registering;
+  document.querySelector("#registration-form").hidden = !registering;
+  document.querySelector("#login-error").hidden = true;
+  document.querySelector("#registration-error").hidden = true;
+  document.querySelector(registering ? "#registration-name" : "#login-username").focus();
+}
+
+function displayLoginError(element, message) {
+  element.textContent = message;
+  element.hidden = false;
+}
+
+function setAccountSession(account, errorElement) {
+  const signedInAccount = recordAccountLogin(account, errorElement);
+  if (!signedInAccount) return false;
+  try {
+    sessionStorage.setItem(LOGIN_SESSION_KEY, signedInAccount.id);
+  } catch (error) {
+    displayLoginError(errorElement, `Couldn't start a sign-in session: ${error.message}`);
+    return false;
+  }
+  state.currentAccount = signedInAccount;
+  enterApplication();
+  return true;
+}
+
+function createTeacherAccount(event) {
+  event.preventDefault();
+  const errorElement = document.querySelector("#registration-error");
+  const username = document.querySelector("#registration-username").value.trim();
+  const normalizedUsername = username.toLocaleLowerCase();
+  const password = document.querySelector("#registration-password").value;
+  const confirmPassword = document.querySelector("#registration-confirm-password").value;
+  if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) {
+    displayLoginError(errorElement, "Use 3–40 letters, numbers, periods, underscores, or hyphens for the username.");
+    return;
+  }
+  if (normalizedUsername === LOGIN_USERNAME
+    || accounts.some((account) => account.username.toLocaleLowerCase() === normalizedUsername)) {
+    displayLoginError(errorElement, "That username is already in use. Please choose another.");
+    return;
+  }
+  if (password.length < 8) {
+    displayLoginError(errorElement, "Choose a password with at least 8 characters.");
+    return;
+  }
+  if (password !== confirmPassword) {
+    displayLoginError(errorElement, "The passwords do not match.");
+    document.querySelector("#registration-confirm-password").focus();
+    return;
+  }
+
+  const teacherId = createId();
+  const timestamp = new Date().toISOString();
+  const account = {
+    id: createId(),
+    username,
+    password,
+    role: "teacher",
+    teacherId,
+    loginHistory: [timestamp],
+    loginCount: 1,
+    lastLoginAt: timestamp,
+  };
+  const initialState = {
+    teachers: [{
+      id: teacherId,
+      name: document.querySelector("#registration-name").value.trim(),
+      employeeId: document.querySelector("#registration-employee-id").value.trim(),
+      position: document.querySelector("#registration-position").value.trim(),
+      status: "Active",
+    }],
+    loads: [],
+    substitutionPlans: [],
+    settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
+  };
+  if (!initialState.teachers[0].name) {
+    displayLoginError(errorElement, "Enter your full name.");
+    document.querySelector("#registration-name").focus();
+    return;
+  }
+
+  try {
+    localStorage.setItem(accountStorageKey(account), JSON.stringify(initialState));
+  } catch (error) {
+    displayLoginError(errorElement, `Couldn't create this account's local records: ${error.message}`);
+    return;
+  }
+  const nextAccounts = [...accounts, account];
+  if (!saveAccounts(nextAccounts, errorElement)) {
+    try {
+      localStorage.removeItem(accountStorageKey(account));
+    } catch (error) {
+      displayLoginError(errorElement, `Couldn't finish creating the account: ${error.message}`);
+      return;
+    }
+    return;
+  }
+  try {
+    sessionStorage.setItem(LOGIN_SESSION_KEY, account.id);
+  } catch (error) {
+    displayLoginError(errorElement, `Account created, but couldn't start a sign-in session: ${error.message}`);
+    return;
+  }
+  state.currentAccount = account;
+  enterApplication();
 }
 
 function initialize() {
   const loginForm = document.querySelector("#login-form");
   const loginError = document.querySelector("#login-error");
+  const registrationForm = document.querySelector("#registration-form");
+  const registrationError = document.querySelector("#registration-error");
+  try {
+    accounts = loadAccounts();
+  } catch (error) {
+    displayLoginError(loginError, `Couldn't read teacher accounts: ${error.message}`);
+    return;
+  }
   loginForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const username = document.querySelector("#login-username").value.trim();
     const password = document.querySelector("#login-password").value;
-    if (username !== LOGIN_USERNAME || password !== LOGIN_PASSWORD) {
-      loginError.hidden = false;
+    let account = accounts.find((item) => item.username.toLocaleLowerCase() === username.toLocaleLowerCase()
+      && item.password === password);
+    if (username === LOGIN_USERNAME && password === LOGIN_PASSWORD) {
+      account = accounts.find((item) => item.id === "legacy-admin") ?? {
+        id: "legacy-admin",
+        username: LOGIN_USERNAME,
+        role: "admin",
+        loginHistory: [],
+        loginCount: 0,
+      };
+    }
+    if (!account) {
+      displayLoginError(loginError, "Incorrect username or password.");
       document.querySelector("#login-password").value = "";
       document.querySelector("#login-password").focus();
       return;
     }
     loginError.hidden = true;
-    try {
-      sessionStorage.setItem(LOGIN_SESSION_KEY, "true");
-    } catch (error) {
-      loginError.textContent = `Couldn't start a sign-in session: ${error.message}`;
-      loginError.hidden = false;
-      return;
-    }
-    enterApplication();
+    setAccountSession(account, loginError);
   });
+  registrationForm.addEventListener("submit", createTeacherAccount);
+  document.querySelector("#show-registration").addEventListener("click", () => setLoginMode(true));
+  document.querySelector("#show-login").addEventListener("click", () => setLoginMode(false));
   document.querySelector("#logout-button").addEventListener("click", () => {
     try {
       sessionStorage.removeItem(LOGIN_SESSION_KEY);
@@ -1546,18 +1839,38 @@ function initialize() {
       showToast(`Couldn't clear the sign-in session: ${error.message}`, "error");
       return;
     }
+    closeSidebar();
     document.querySelector("#app-shell").hidden = true;
     document.querySelector("#login-screen").hidden = false;
+    state.currentAccount = null;
     document.querySelector("#login-form").reset();
+    document.querySelector("#registration-form").reset();
     document.querySelector("#login-error").hidden = true;
-    document.querySelector("#login-username").focus();
+    setLoginMode(false);
   });
 
   try {
-    if (sessionStorage.getItem(LOGIN_SESSION_KEY) === "true") enterApplication();
+    const sessionAccountId = sessionStorage.getItem(LOGIN_SESSION_KEY);
+    if (sessionAccountId) {
+      const account = sessionAccountId === "true" || sessionAccountId === "legacy-admin"
+        ? accounts.find((item) => item.id === "legacy-admin") ?? {
+          id: "legacy-admin",
+          username: LOGIN_USERNAME,
+          role: "admin",
+          loginHistory: [],
+          loginCount: 0,
+        }
+        : accounts.find((item) => item.id === sessionAccountId);
+      if (!account) {
+        sessionStorage.removeItem(LOGIN_SESSION_KEY);
+        displayLoginError(loginError, "This sign-in session is no longer valid. Please log in again.");
+        return;
+      }
+      state.currentAccount = account;
+      enterApplication();
+    }
   } catch (error) {
-    loginError.textContent = `Couldn't check the sign-in session: ${error.message}`;
-    loginError.hidden = false;
+    displayLoginError(loginError, `Couldn't check the sign-in session: ${error.message}`);
   }
 }
 

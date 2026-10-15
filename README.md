@@ -12,7 +12,9 @@ Open **Settings** to configure school branding, including the school name, addre
 
 ## Sign in
 
-Sign in with username `admin` and the configured password. The sign-in gate is stored in the current browser session. This static, browser-only app does not provide server-side authentication or secure access control; credentials are visible in the public source and must not be relied on to protect confidential records.
+Teachers can create an account from the sign-in page. Each teacher account gets its own profile and teaching-load records in the current browser, and every successful sign-in is recorded in **Teachers Account**. Use the same browser and device to see that account and its records again. The existing `admin` sign-in continues to access legacy schoolwide records.
+
+This static app has no server: accounts, passwords, and sign-in history are stored in browser local storage and do not sync across browsers or devices. This is not secure authentication; do not use it to protect confidential information or reuse a sensitive password. Teacher accounts cannot access the schoolwide roster needed to create substitution plans; manage those from the admin account.
 
 ## Run
 

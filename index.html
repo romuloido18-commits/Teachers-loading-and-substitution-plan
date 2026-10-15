@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#eff6ff">
     <title>Teacher Load Manager</title>
-    <link rel="stylesheet" href="styles.css?v=20261015-branding">
-    <script src="app.js?v=20261015-branding" defer></script>
+    <link rel="stylesheet" href="styles.css?v=20261015-teacher-accounts">
+    <script src="app.js?v=20261015-teacher-accounts" defer></script>
   </head>
   <body>
     <main class="login-screen" id="login-screen">
-      <form class="login-card" id="login-form">
+      <div class="login-card">
         <section class="login-welcome" aria-label="Teacher Load Manager">
           <div class="login-brand">
             <span class="brand-mark" data-brand-mark aria-hidden="true">TL</span>
@@ -27,7 +27,7 @@
             <div class="login-schedule-lines"><i></i><i></i><i></i></div>
           </div>
         </section>
-        <div class="login-panel">
+        <form class="login-panel" id="login-form">
           <div class="login-panel-heading">
             <div class="eyebrow"><span class="eyebrow-line"></span> WELCOME BACK</div>
             <h1>Sign in</h1>
@@ -37,9 +37,27 @@
           <label class="field login-field">Password<span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="login-password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required></span></label>
           <p class="login-error" id="login-error" role="alert" hidden>Incorrect username or password.</p>
           <button class="button button-primary login-submit" type="submit">Log in <span aria-hidden="true">→</span></button>
-          <p class="login-privacy"><span aria-hidden="true">▣</span> Your school records stay saved in this browser.</p>
-        </div>
-      </form>
+          <button class="text-button login-account-toggle" id="show-registration" type="button">Create a teacher account</button>
+          <p class="login-privacy"><span aria-hidden="true">▣</span> Accounts and sign-in history are stored only in this browser; they are not secure or shared across devices.</p>
+        </form>
+        <form class="login-panel registration-panel" id="registration-form" hidden>
+          <div class="login-panel-heading">
+            <div class="eyebrow"><span class="eyebrow-line"></span> NEW TEACHER</div>
+            <h1>Create account</h1>
+            <p class="login-subtitle">Your profile and assignments will be kept separate in this browser.</p>
+          </div>
+          <label class="field login-field">Full name<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="registration-name" name="name" type="text" maxlength="100" autocomplete="name" required></span></label>
+          <label class="field login-field">Employee ID <span>(optional)</span><span class="login-input-wrap"><span aria-hidden="true">#</span><input id="registration-employee-id" name="employeeId" type="text" maxlength="40"></span></label>
+          <label class="field login-field">Position / designation <span>(optional)</span><span class="login-input-wrap"><span aria-hidden="true">▤</span><input id="registration-position" name="position" type="text" maxlength="80" placeholder="e.g. Teacher III"></span></label>
+          <label class="field login-field">Username<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="registration-username" name="username" type="text" maxlength="40" autocomplete="username" required></span></label>
+          <label class="field login-field">Password <span>(at least 8 characters)</span><span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="registration-password" name="password" type="password" minlength="8" autocomplete="new-password" required></span></label>
+          <label class="field login-field">Confirm password<span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="registration-confirm-password" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></span></label>
+          <p class="login-error" id="registration-error" role="alert" hidden></p>
+          <button class="button button-primary login-submit" type="submit">Create account <span aria-hidden="true">→</span></button>
+          <button class="text-button login-account-toggle" id="show-login" type="button">Already have an account? Sign in</button>
+          <p class="login-privacy"><span aria-hidden="true">▣</span> This account is local to this browser. Do not use a password you rely on to protect sensitive information.</p>
+        </form>
+      </div>
     </main>
     <div class="app-shell" id="app-shell" hidden>
       <aside class="sidebar" id="sidebar">
@@ -115,7 +133,7 @@
           <section class="view-panel active" id="view-overview" aria-labelledby="page-title">
             <div class="page-heading">
               <div>
-                <div class="eyebrow"><span class="eyebrow-line"></span> SCHOOL PERSONNEL</div>
+                <div class="eyebrow"><span class="eyebrow-line"></span> <span id="overview-eyebrow-label">SCHOOL PERSONNEL</span></div>
                 <h1 id="page-title">Good day. <span class="wave" aria-hidden="true">✳</span></h1>
                 <p class="page-subtitle">A clear view of your teachers and their teaching assignments.</p>
               </div>
@@ -180,9 +198,9 @@
           <section class="view-panel" id="view-teachers" aria-labelledby="teachers-title">
             <div class="page-heading">
               <div>
-                <div class="eyebrow"><span class="eyebrow-line"></span> SCHOOL PERSONNEL</div>
+                <div class="eyebrow"><span class="eyebrow-line"></span> <span id="teacher-page-eyebrow">SCHOOL PERSONNEL</span></div>
                 <h1 id="teachers-title">Teachers</h1>
-                <p class="page-subtitle">Manage teacher profiles and review their assigned minutes.</p>
+                <p class="page-subtitle" id="teacher-page-subtitle">Manage teacher profiles and review their assigned minutes.</p>
               </div>
               <div class="heading-actions"><button class="button button-primary" id="add-teacher" type="button"><span aria-hidden="true">＋</span> Add teacher</button></div>
             </div>
@@ -202,7 +220,7 @@
             </div>
             <section class="panel list-panel">
               <div class="list-toolbar">
-                <div><h2>Teacher directory</h2><p class="panel-subtitle" id="teacher-list-caption">0 teacher profiles</p></div>
+                <div><h2 id="teacher-list-title">Teacher directory</h2><p class="panel-subtitle" id="teacher-list-caption">0 teacher profiles</p></div>
                 <label class="search-box"><span aria-hidden="true">⌕</span><input id="teacher-search" type="search" placeholder="Search teachers..." aria-label="Search teachers"></label>
               </div>
               <div class="table-wrap">
@@ -211,6 +229,18 @@
                   <tbody id="teachers-body"></tbody>
                 </table>
                 <div class="empty-state" id="teachers-empty"><span class="empty-icon" aria-hidden="true">♙</span><strong>No teachers to show</strong><p>Add a teacher profile to get started.</p><button class="button button-primary button-small" data-add-teacher type="button">Add teacher</button></div>
+              </div>
+            </section>
+            <section class="panel list-panel account-activity-panel">
+              <div class="list-toolbar">
+                <div><h2>Account sign-in history</h2><p class="panel-subtitle" id="account-login-caption">No sign-ins recorded</p></div>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead><tr><th>DATE AND TIME</th><th>USERNAME</th><th>EVENT</th></tr></thead>
+                  <tbody id="account-login-body"></tbody>
+                </table>
+                <div class="empty-state" id="account-login-empty"><span class="empty-icon" aria-hidden="true">◷</span><strong>No sign-ins recorded</strong><p>Successful sign-ins are recorded automatically on this browser.</p></div>
               </div>
             </section>
           </section>
@@ -253,6 +283,7 @@
                 <button class="button button-primary" id="add-substitution-plan" type="button"><span aria-hidden="true">＋</span> Create substitution plan</button>
               </div>
             </div>
+            <p class="privacy-note" id="teacher-substitution-note" hidden>Teacher accounts can only access their own profile and assignments. Substitution plans need the schoolwide teacher roster, so create or manage them from the admin account.</p>
             <section class="panel list-panel">
               <div class="list-toolbar">
                 <div><h2>Coverage plans</h2><p class="panel-subtitle" id="substitution-plan-caption">0 substitution plans</p></div>
