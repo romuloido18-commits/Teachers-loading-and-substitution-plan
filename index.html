@@ -5,8 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#eff6ff">
     <title>Teacher Load Manager</title>
-    <link rel="stylesheet" href="styles.css?v=20261015-coverage-actions">
-    <script src="app.js?v=20261015-coverage-actions" defer></script>
+    <link rel="stylesheet" href="styles.css?v=20261015-shared-cloud">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="app.js?v=20261015-shared-cloud" defer></script>
   </head>
   <body>
     <main class="login-screen" id="login-screen">
@@ -33,29 +34,30 @@
             <h1>Sign in</h1>
             <p class="login-subtitle">Enter your account details to continue.</p>
           </div>
-          <label class="field login-field">Username<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="login-username" name="username" type="text" placeholder="Enter your username" autocomplete="username" required autofocus></span></label>
+          <label class="field login-field">Email<span class="login-input-wrap"><span aria-hidden="true">@</span><input id="login-email" name="email" type="email" placeholder="Enter your email address" autocomplete="email" required autofocus></span></label>
           <label class="field login-field">Password<span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="login-password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required></span></label>
           <p class="login-error" id="login-error" role="alert" hidden>Incorrect username or password.</p>
           <button class="button button-primary login-submit" type="submit">Log in <span aria-hidden="true">→</span></button>
           <button class="text-button login-account-toggle" id="show-registration" type="button">Create a teacher account</button>
-          <p class="login-privacy"><span aria-hidden="true">▣</span> Accounts and sign-in history are stored only in this browser; they are not secure or shared across devices.</p>
+          <p class="login-privacy"><span aria-hidden="true">▣</span> Your account and school records are stored securely in the school's shared database. Use your registered email and keep your password private.</p>
         </form>
         <form class="login-panel registration-panel" id="registration-form" hidden>
           <div class="login-panel-heading">
             <div class="eyebrow"><span class="eyebrow-line"></span> NEW TEACHER</div>
             <h1>Create account</h1>
-            <p class="login-subtitle">Your profile and assignments will be added to school records in this browser.</p>
+            <p class="login-subtitle">Create an email/password account to add your profile to shared school records.</p>
           </div>
           <label class="field login-field">Full name<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="registration-name" name="name" type="text" maxlength="100" autocomplete="name" required></span></label>
           <label class="field login-field">Employee ID <span>(optional)</span><span class="login-input-wrap"><span aria-hidden="true">#</span><input id="registration-employee-id" name="employeeId" type="text" maxlength="40"></span></label>
           <label class="field login-field">Position / designation <span>(optional)</span><span class="login-input-wrap"><span aria-hidden="true">▤</span><input id="registration-position" name="position" type="text" maxlength="80" placeholder="e.g. Teacher III"></span></label>
+          <label class="field login-field">Email<span class="login-input-wrap"><span aria-hidden="true">@</span><input id="registration-email" name="email" type="email" autocomplete="email" required></span></label>
           <label class="field login-field">Username<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="registration-username" name="username" type="text" maxlength="40" autocomplete="username" required></span></label>
           <label class="field login-field">Password <span>(at least 8 characters)</span><span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="registration-password" name="password" type="password" minlength="8" autocomplete="new-password" required></span></label>
           <label class="field login-field">Confirm password<span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="registration-confirm-password" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></span></label>
           <p class="login-error" id="registration-error" role="alert" hidden></p>
           <button class="button button-primary login-submit" type="submit">Create account <span aria-hidden="true">→</span></button>
           <button class="text-button login-account-toggle" id="show-login" type="button">Already have an account? Sign in</button>
-          <p class="login-privacy"><span aria-hidden="true">▣</span> This account is local to this browser. Do not use a password you rely on to protect sensitive information.</p>
+          <p class="login-privacy"><span aria-hidden="true">▣</span> The administrator will review school records. Use a unique password and don't share your login details.</p>
         </form>
       </div>
     </main>
@@ -98,7 +100,7 @@
           <div class="help-card">
             <span class="help-icon" aria-hidden="true">i</span>
             <strong>Keep your records handy</strong>
-            <p>Your records are saved in this browser. Export a backup regularly.</p>
+            <p>Your records are stored in the shared school database. Export a backup regularly.</p>
             <button class="text-button" id="sidebar-export" type="button">Export records <span aria-hidden="true">→</span></button>
           </div>
           <div class="sidebar-foot">TEACHER LOAD MANAGER <span>·</span> SCHOOL RECORDS</div>
@@ -192,7 +194,7 @@
                 </div>
               </aside>
             </div>
-            <p class="privacy-note"><span aria-hidden="true">⌑</span> Your information is stored locally in this browser and is not sent to a server.</p>
+            <p class="privacy-note"><span aria-hidden="true">⌑</span> Teaching and school records are stored in the school's shared database.</p>
           </section>
 
           <section class="view-panel" id="view-teachers" aria-labelledby="teachers-title">
@@ -233,14 +235,14 @@
             </section>
             <section class="panel list-panel account-activity-panel">
               <div class="list-toolbar">
-                <div><h2>Account sign-in history</h2><p class="panel-subtitle" id="account-login-caption">No sign-ins recorded</p></div>
+                <div><h2>Account sign-in history</h2><p class="panel-subtitle" id="account-login-caption">Sign-in history is not collected</p></div>
               </div>
               <div class="table-wrap">
                 <table>
                   <thead><tr><th>DATE AND TIME</th><th>USERNAME</th><th>EVENT</th></tr></thead>
                   <tbody id="account-login-body"></tbody>
                 </table>
-                <div class="empty-state" id="account-login-empty"><span class="empty-icon" aria-hidden="true">◷</span><strong>No sign-ins recorded</strong><p>Successful sign-ins are recorded automatically on this browser.</p></div>
+                <div class="empty-state" id="account-login-empty"><span class="empty-icon" aria-hidden="true">◷</span><strong>Sign-in history is not collected</strong><p>The shared database stores account profiles and school records, but not sign-in events.</p></div>
               </div>
             </section>
           </section>
@@ -456,7 +458,7 @@
               <input id="setting-school-logo" name="schoolLogo" type="file" accept="image/png,image/jpeg,image/webp,image/gif">
               <button class="button button-secondary button-small" id="remove-school-logo" type="button" hidden>Remove logo</button>
             </div>
-            <small class="field-hint">Choose a PNG, JPG, WebP, or GIF image up to 1 MB. The logo is saved in this browser.</small>
+            <small class="field-hint">Choose a PNG, JPG, WebP, or GIF image up to 1 MB. The logo is saved with the shared school records.</small>
             <input id="setting-remove-school-logo" type="checkbox" hidden>
           </div>
         </div>
@@ -488,6 +490,11 @@
             <label class="period-time-row"><span>Period 6</span><input type="time" data-period-start="6" aria-label="Period 6 start time"><input type="time" data-period-end="6" aria-label="Period 6 end time"></label>
             <label class="period-time-row"><span>Period 7</span><input type="time" data-period-start="7" aria-label="Period 7 start time"><input type="time" data-period-end="7" aria-label="Period 7 end time"></label>
           </div>
+        </section>
+        <section class="group-names-field" aria-labelledby="legacy-import-title">
+          <div class="period-settings-heading"><h3 id="legacy-import-title">Import old browser records</h3></div>
+          <p class="field-hint">Adds this browser's saved teacher, assignment, leave, and coverage records to the shared database without replacing existing records. Old account passwords are not transferred; teachers must create new email accounts.</p>
+          <button class="button button-secondary button-small" id="import-legacy-records" type="button">Import records from this browser</button>
         </section>
         <div class="dialog-actions"><button class="button button-secondary" type="button" data-close-dialog>Cancel</button><button class="button button-primary" type="submit">Save details</button></div>
       </form>

@@ -1,13 +1,15 @@
 "use strict";
 
-const STORAGE_KEY = "teacher-load-manager-v1";
-const LOGIN_SESSION_KEY = "teacher-load-manager-authenticated";
-const ACCOUNTS_KEY = "teacher-load-manager-accounts-v1";
-const ACCOUNT_MIGRATION_KEY = "teacher-load-manager-account-migration-v2";
-const LOGIN_USERNAME = "admin";
-const LOGIN_PASSWORD = "Admin@1831";
-let accounts = [];
+const LEGACY_STORAGE_KEY = "teacher-load-manager-v1";
+const LEGACY_ACCOUNTS_KEY = "teacher-load-manager-accounts-v1";
+const SUPABASE_URL = "https://egnaqamactwhcyvfwbrl.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_XrI_ZgTajcP_xQpHNONSpQ_TPglfF42";
+let supabaseClient = null;
+let cloudRevision = 0;
 let appInitialized = false;
+let cloudSaveInProgress = false;
+let cloudRefreshInProgress = false;
+let cloudRefreshTimer = 0;
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const DEFAULT_PERIOD_TIMES = Object.fromEntries(
   Array.from({ length: 7 }, (_, index) => [String(index + 1), { start: "", end: "" }]),
@@ -70,148 +72,192 @@ function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `record-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function loadAccounts() {
-  const saved = localStorage.getItem(ACCOUNTS_KEY);
-  if (!saved) return [];
-  const parsed = JSON.parse(saved);
-  if (!Array.isArray(parsed) || parsed.some((account) =>
-    !account || typeof account.id !== "string" || typeof account.username !== "string"
-    || !["teacher", "admin"].includes(account.role) || !Array.isArray(account.loginHistory))) {
-    throw new Error("Saved teacher accounts have an invalid format.");
-  }
-  return parsed;
-}
-
-function saveAccounts(nextAccounts = accounts, errorElement = null) {
-  try {
-    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(nextAccounts));
-    accounts = nextAccounts;
-    return true;
-  } catch (error) {
-    if (errorElement) displayLoginError(errorElement, `Couldn't save teacher accounts in this browser: ${error.message}`);
-    else showToast(`Couldn't save teacher accounts in this browser: ${error.message}`, "error");
-    return false;
-  }
-}
-
-function recordAccountLogin(account, errorElement = null) {
-  const timestamp = new Date().toISOString();
-  const updatedAccount = {
-    ...account,
-    loginHistory: [...(account.loginHistory ?? []), timestamp],
-    loginCount: (Number(account.loginCount) || 0) + 1,
-    lastLoginAt: timestamp,
-  };
-  const nextAccounts = accounts.filter((item) => item.id !== account.id);
-  nextAccounts.push(updatedAccount);
-  if (!saveAccounts(nextAccounts, errorElement)) return null;
-  return updatedAccount;
-}
-
-function migrateTeacherAccountRecords() {
-  if (localStorage.getItem(ACCOUNT_MIGRATION_KEY) === "complete") return true;
-  let schoolRecords = { teachers: [], loads: [], substitutionPlans: [], leaveApplications: [], settings: {} };
-  const savedSchoolRecords = localStorage.getItem(STORAGE_KEY);
-  if (savedSchoolRecords) {
-    schoolRecords = JSON.parse(savedSchoolRecords);
-    if (!schoolRecords || !Array.isArray(schoolRecords.teachers) || !Array.isArray(schoolRecords.loads)) {
-      throw new Error("Saved school records have an invalid format.");
-    }
-    schoolRecords.substitutionPlans = Array.isArray(schoolRecords.substitutionPlans)
-      ? schoolRecords.substitutionPlans
-      : [];
-    schoolRecords.leaveApplications = Array.isArray(schoolRecords.leaveApplications)
-      ? schoolRecords.leaveApplications
-      : [];
-  }
-  let changed = false;
-  accounts.filter((account) => account.role === "teacher" && account.teacherId).forEach((account) => {
-    const key = `${STORAGE_KEY}:account:${account.id}`;
-    const savedAccountRecords = localStorage.getItem(key);
-    if (!savedAccountRecords) return;
-    const accountRecords = JSON.parse(savedAccountRecords);
-    if (!accountRecords || !Array.isArray(accountRecords.teachers) || !Array.isArray(accountRecords.loads)) {
-      throw new Error(`Saved records for ${account.username} have an invalid format.`);
-    }
-    const teacher = accountRecords.teachers.find((item) => item.id === account.teacherId);
-    if (teacher && !schoolRecords.teachers.some((item) => item.id === teacher.id)) {
-      schoolRecords.teachers.push(teacher);
-      changed = true;
-    }
-    accountRecords.loads.filter((load) => load.teacherId === account.teacherId).forEach((load) => {
-      if (!schoolRecords.loads.some((item) => item.id === load.id)) {
-        schoolRecords.loads.push(load);
-        changed = true;
-      }
-    });
-    (accountRecords.substitutionPlans ?? []).forEach((plan) => {
-      if (!schoolRecords.substitutionPlans.some((item) => item.id === plan.id)) {
-        schoolRecords.substitutionPlans.push(plan);
-        changed = true;
-      }
-    });
-  });
-  if (changed) localStorage.setItem(STORAGE_KEY, JSON.stringify(schoolRecords));
-  localStorage.setItem(ACCOUNT_MIGRATION_KEY, "complete");
-  return true;
-}
-
-function loadState() {
+function applySchoolState(parsed) {
   state.teachers = [];
   state.loads = [];
   state.substitutionPlans = [];
   state.leaveApplications = [];
   state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) return;
-    const parsed = JSON.parse(saved);
-    if (!parsed || !Array.isArray(parsed.teachers) || !Array.isArray(parsed.loads)) {
-      throw new Error("Saved school records have an invalid format.");
-    }
-    state.teachers = parsed.teachers;
-    state.substitutionPlans = Array.isArray(parsed.substitutionPlans) ? parsed.substitutionPlans : [];
-    state.leaveApplications = Array.isArray(parsed.leaveApplications) ? parsed.leaveApplications : [];
-    state.loads = parsed.loads.map((load) => {
-      if (load.minutes !== undefined) return { ...load, minutes: Number(load.minutes) };
-      const legacyHours = Number(load.hours);
-      const { hours, ...legacyLoad } = load;
-      return { ...legacyLoad, minutes: Number.isFinite(legacyHours) ? legacyHours * 60 : 0 };
-    });
-    const groupNames = Array.isArray(parsed.settings?.groupNames) && parsed.settings.groupNames.length
-      ? parsed.settings.groupNames
-      : [...DEFAULT_SETTINGS.groupNames];
-    const periodTimes = { ...DEFAULT_PERIOD_TIMES, ...(parsed.settings?.periodTimes ?? {}) };
-    state.settings = {
-      ...DEFAULT_SETTINGS,
-      ...(parsed.settings ?? {}),
+  if (!parsed || !Array.isArray(parsed.teachers) || !Array.isArray(parsed.loads)) {
+    throw new Error("The shared school records have an invalid format.");
+  }
+  state.teachers = parsed.teachers;
+  state.substitutionPlans = Array.isArray(parsed.substitutionPlans) ? parsed.substitutionPlans : [];
+  state.leaveApplications = Array.isArray(parsed.leaveApplications) ? parsed.leaveApplications : [];
+  state.loads = parsed.loads.map((load) => {
+    if (load.minutes !== undefined) return { ...load, minutes: Number(load.minutes) };
+    const legacyHours = Number(load.hours);
+    const { hours, ...legacyLoad } = load;
+    return { ...legacyLoad, minutes: Number.isFinite(legacyHours) ? legacyHours * 60 : 0 };
+  });
+  const groupNames = Array.isArray(parsed.settings?.groupNames) && parsed.settings.groupNames.length
+    ? parsed.settings.groupNames
+    : [...DEFAULT_SETTINGS.groupNames];
+  const periodTimes = { ...DEFAULT_PERIOD_TIMES, ...(parsed.settings?.periodTimes ?? {}) };
+  state.settings = {
+    ...DEFAULT_SETTINGS,
+    ...(parsed.settings ?? {}),
+    groupNames,
+    periodTimes,
+    groupPeriodTimes: createGroupPeriodTimes(
       groupNames,
+      parsed.settings?.groupPeriodTimes ?? {},
       periodTimes,
-      groupPeriodTimes: createGroupPeriodTimes(
-        groupNames,
-        parsed.settings?.groupPeriodTimes ?? {},
-        periodTimes,
-      ),
-    };
-  } catch (error) {
-    showToast(`Couldn't read saved records: ${error.message}`, "error");
+    ),
+  };
+}
+
+async function loadCloudState() {
+  const { data, error } = await supabaseClient.rpc("load_school_state");
+  if (error) throw error;
+  if (!data || typeof data !== "object" || !Number.isSafeInteger(Number(data.revision))) {
+    throw new Error("The shared records response is incomplete.");
+  }
+  applySchoolState(data.data);
+  cloudRevision = Number(data.revision);
+}
+
+async function saveState() {
+  if (!supabaseClient || !state.currentAccount) {
+    showToast("Sign in before saving shared school records.", "error");
+    return false;
+  }
+  cloudSaveInProgress = true;
+  try {
+    const { data, error } = await supabaseClient.rpc("save_school_state", {
+      p_data: {
+        teachers: state.teachers,
+        loads: state.loads,
+        substitutionPlans: state.substitutionPlans,
+        leaveApplications: state.leaveApplications,
+        settings: state.settings,
+      },
+      p_expected_revision: cloudRevision,
+    });
+    if (error) {
+      const message = error.code === "40001"
+        ? "Another user changed school records. Reload the page before trying again; your unsaved change was not saved."
+        : `Couldn't save shared records: ${error.message}`;
+      showToast(message, "error");
+      return false;
+    }
+    cloudRevision = Number(data);
+    return true;
+  } finally {
+    cloudSaveInProgress = false;
   }
 }
 
-function saveState() {
+async function refreshCloudState() {
+  if (!state.currentAccount || document.hidden || cloudSaveInProgress || cloudRefreshInProgress
+    || document.querySelector("dialog[open]")) return;
+  cloudRefreshInProgress = true;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      teachers: state.teachers,
-      loads: state.loads,
-      substitutionPlans: state.substitutionPlans,
-      leaveApplications: state.leaveApplications,
-      settings: state.settings,
-    }));
-    return true;
+    const activeView = state.activeView;
+    await loadCloudState();
+    state.activeView = activeView;
+    render();
+    switchView(activeView);
   } catch (error) {
-    showToast(`Couldn't save records in this browser: ${error.message}`, "error");
-    return false;
+    showToast(`Couldn't refresh shared records: ${error.message}`, "error");
+  } finally {
+    cloudRefreshInProgress = false;
   }
+}
+
+async function importLegacyRecords() {
+  if (!isAdminAccount()) {
+    showToast("Only the admin can import records from this browser.", "error");
+    return;
+  }
+  if (!window.confirm("Import this browser's old teacher, load, leave, and substitution records into the shared school database? Existing cloud records will be kept. Old passwords and accounts are not imported.")) {
+    return;
+  }
+
+  let imported;
+  try {
+    imported = {
+      teachers: [],
+      loads: [],
+      substitutionPlans: [],
+      leaveApplications: [],
+    };
+    const saved = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (saved) {
+      const records = JSON.parse(saved);
+      if (!records || !Array.isArray(records.teachers) || !Array.isArray(records.loads)) {
+        throw new Error("The browser's saved school records have an invalid format.");
+      }
+      imported.teachers.push(...records.teachers);
+      imported.loads.push(...records.loads);
+      imported.substitutionPlans.push(...(Array.isArray(records.substitutionPlans) ? records.substitutionPlans : []));
+      imported.leaveApplications.push(...(Array.isArray(records.leaveApplications) ? records.leaveApplications : []));
+    }
+
+    const savedAccounts = localStorage.getItem(LEGACY_ACCOUNTS_KEY);
+    if (savedAccounts) {
+      const legacyAccounts = JSON.parse(savedAccounts);
+      if (!Array.isArray(legacyAccounts)) throw new Error("The browser's saved accounts have an invalid format.");
+      legacyAccounts.filter((account) => account.role === "teacher" && account.teacherId).forEach((account) => {
+        const accountRecordsText = localStorage.getItem(`${LEGACY_STORAGE_KEY}:account:${account.id}`);
+        if (!accountRecordsText) return;
+        const accountRecords = JSON.parse(accountRecordsText);
+        if (!accountRecords || !Array.isArray(accountRecords.teachers) || !Array.isArray(accountRecords.loads)) {
+          throw new Error(`Saved records for ${account.username || "a teacher"} have an invalid format.`);
+        }
+        imported.teachers.push(...accountRecords.teachers.filter((teacher) => teacher.id === account.teacherId));
+        imported.loads.push(...accountRecords.loads.filter((load) => load.teacherId === account.teacherId));
+        imported.substitutionPlans.push(...(Array.isArray(accountRecords.substitutionPlans) ? accountRecords.substitutionPlans : []));
+        imported.leaveApplications.push(...(Array.isArray(accountRecords.leaveApplications) ? accountRecords.leaveApplications : []));
+      });
+    }
+  } catch (error) {
+    showToast(`Couldn't read old records: ${error.message}`, "error");
+    return;
+  }
+
+  const hasRecords = Object.values(imported).some((records) => records.length);
+  if (!hasRecords) {
+    showToast("No old school records were found in this browser.", "error");
+    return;
+  }
+  const mergeById = (cloudRecords, localRecords) => {
+    const merged = [...cloudRecords];
+    const knownIds = new Set(cloudRecords.map((record) => record.id).filter(Boolean));
+    localRecords.forEach((record) => {
+      if (!record || typeof record !== "object" || typeof record.id !== "string") {
+        throw new Error("An old record is missing its ID.");
+      }
+      if (!knownIds.has(record.id)) {
+        knownIds.add(record.id);
+        merged.push(record);
+      }
+    });
+    return merged;
+  };
+  const previous = {
+    teachers: state.teachers,
+    loads: state.loads,
+    substitutionPlans: state.substitutionPlans,
+    leaveApplications: state.leaveApplications,
+  };
+  try {
+    state.teachers = mergeById(previous.teachers, imported.teachers);
+    state.loads = mergeById(previous.loads, imported.loads);
+    state.substitutionPlans = mergeById(previous.substitutionPlans, imported.substitutionPlans);
+    state.leaveApplications = mergeById(previous.leaveApplications, imported.leaveApplications);
+  } catch (error) {
+    Object.assign(state, previous);
+    showToast(`Couldn't prepare old records for import: ${error.message}`, "error");
+    return;
+  }
+  if (!(await saveState())) {
+    Object.assign(state, previous);
+    return;
+  }
+  elements.settingsDialog.close();
+  render();
+  showToast("Old records from this browser were added to the shared school database. Accounts and passwords must be recreated.");
 }
 
 function showToast(message, type = "success") {
@@ -572,32 +618,9 @@ function render() {
 function renderLoginActivity() {
   const body = document.querySelector("#account-login-body");
   const empty = document.querySelector("#account-login-empty");
-  const history = isAdminAccount()
-    ? accounts.flatMap((account) => (account.loginHistory ?? []).map((timestamp) => ({
-      account,
-      timestamp,
-    })))
-    : (state.currentAccount?.loginHistory ?? []).map((timestamp) => ({
-      account: state.currentAccount,
-      timestamp,
-    }));
-  history.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-  setEmptyState(body, empty, history.length > 0);
-  document.querySelector("#account-login-caption").textContent = history.length
-    ? `${history.length} successful ${history.length === 1 ? "sign-in" : "sign-ins"} recorded`
-    : "No sign-ins recorded";
-  [...history].reverse().forEach(({ account, timestamp }) => {
-    const row = document.createElement("tr");
-    const dateCell = document.createElement("td");
-    const date = new Date(timestamp);
-    dateCell.textContent = Number.isNaN(date.getTime())
-      ? "Unknown date"
-      : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
-    row.append(dateCell);
-    makeCell(row, account?.username ?? "—");
-    makeCell(row, "Successful sign-in");
-    body.append(row);
-  });
+  setEmptyState(body, empty, false);
+  document.querySelector("#account-login-caption").textContent =
+    "Sign-in history is not collected by the shared database.";
 }
 
 function renderHeader() {
@@ -903,7 +926,7 @@ function makePlanReviewButton(plan, status, label, mark) {
   return button;
 }
 
-function reviewSubstitutionPlan(planId, status) {
+async function reviewSubstitutionPlan(planId, status) {
   if (!isAdminAccount() || !["approved", "rejected"].includes(status)) {
     showToast("Only the admin can review substitution proposals.", "error");
     return;
@@ -942,7 +965,7 @@ function reviewSubstitutionPlan(planId, status) {
   const previousPlans = state.substitutionPlans;
   state.substitutionPlans = previousPlans.map((item) =>
     item.id === planId ? { ...item, status, reviewedAt: new Date().toISOString() } : item);
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.substitutionPlans = previousPlans;
     return;
   }
@@ -965,7 +988,7 @@ function openLeaveApplicationDialog() {
   document.querySelector("#leave-application-start-date").focus();
 }
 
-function saveLeaveApplication(event) {
+async function saveLeaveApplication(event) {
   event.preventDefault();
   if (!isTeacherAccount()) {
     showToast("Only a teacher account can apply for leave.", "error");
@@ -995,7 +1018,7 @@ function saveLeaveApplication(event) {
   };
   const previousApplications = state.leaveApplications;
   state.leaveApplications = [...previousApplications, application];
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.leaveApplications = previousApplications;
     return;
   }
@@ -1004,7 +1027,7 @@ function saveLeaveApplication(event) {
   showToast("Leave application submitted for admin review.");
 }
 
-function reviewLeaveApplication(applicationId, status) {
+async function reviewLeaveApplication(applicationId, status) {
   if (!isAdminAccount() || !["approved", "rejected"].includes(status)) {
     showToast("Only the admin can review leave applications.", "error");
     return;
@@ -1024,7 +1047,7 @@ function reviewLeaveApplication(applicationId, status) {
     state.teachers = previousTeachers.map((item) =>
       item.id === application.teacherId ? { ...item, status: "On leave" } : item);
   }
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.leaveApplications = previousApplications;
     state.teachers = previousTeachers;
     return;
@@ -1423,7 +1446,7 @@ function openSubstitutionPlanPreview(planId) {
   previewDialog.showModal();
 }
 
-function saveSubstitutionPlan(event) {
+async function saveSubstitutionPlan(event) {
   event.preventDefault();
   if (!isAdminAccount() && !isTeacherAccount()) {
     showToast("Sign in with an authorized account to manage substitution plans.", "error");
@@ -1511,7 +1534,7 @@ function saveSubstitutionPlan(event) {
   } else {
     state.substitutionPlans = [...previousPlans, plan];
   }
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.substitutionPlans = previousPlans;
     return;
   }
@@ -1523,7 +1546,7 @@ function saveSubstitutionPlan(event) {
       : "Substitution plan saved.");
 }
 
-function deleteSubstitutionPlan(id) {
+async function deleteSubstitutionPlan(id) {
   const plan = state.substitutionPlans.find((item) => item.id === id);
   if (!canManageSubstitutionPlan(plan)) {
     showToast("You can only delete your own pending coverage proposals.", "error");
@@ -1532,7 +1555,7 @@ function deleteSubstitutionPlan(id) {
   if (!plan || !window.confirm("Delete this substitution plan?")) return;
   const previousPlans = state.substitutionPlans;
   state.substitutionPlans = previousPlans.filter((plan) => plan.id !== id);
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.substitutionPlans = previousPlans;
     return;
   }
@@ -1635,7 +1658,7 @@ function openLoadDialog(loadId, selectedTeacherId = "") {
   teacherSelect.focus();
 }
 
-function saveTeacher(event) {
+async function saveTeacher(event) {
   event.preventDefault();
   if (!isAdminAccount()) {
     showToast("Only the admin can manage teacher profiles.", "error");
@@ -1660,7 +1683,7 @@ function saveTeacher(event) {
   const previousTeachers = [...state.teachers];
   if (id) state.teachers = state.teachers.map((teacher) => teacher.id === id ? record : teacher);
   else state.teachers.push(record);
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.teachers = previousTeachers;
     return;
   }
@@ -1669,7 +1692,7 @@ function saveTeacher(event) {
   showToast(id ? "Teacher profile updated." : "Teacher profile added.");
 }
 
-function saveLoad(event) {
+async function saveLoad(event) {
   event.preventDefault();
   if (!isAdminAccount() && !isTeacherAccount()) {
     showToast("Sign in with an authorized account to manage teaching loads.", "error");
@@ -1734,7 +1757,7 @@ function saveLoad(event) {
   } else {
     state.loads.push(record);
   }
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.loads = previousLoads;
     return;
   }
@@ -1774,7 +1797,7 @@ function previewTeacherLoads() {
   elements.teacherLoadPreview.showModal();
 }
 
-function deleteTeacher(id) {
+async function deleteTeacher(id) {
   if (!isAdminAccount()) {
     showToast("Only the admin can manage teacher profiles.", "error");
     return;
@@ -1799,7 +1822,7 @@ function deleteTeacher(id) {
   state.substitutionPlans = state.substitutionPlans.filter((plan) =>
     plan.leaveTeacherId !== id && plan.substituteTeacherId !== id);
   state.leaveApplications = state.leaveApplications.filter((application) => application.teacherId !== id);
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.teachers = previousTeachers;
     state.loads = previousLoads;
     state.substitutionPlans = previousSubstitutionPlans;
@@ -1811,7 +1834,7 @@ function deleteTeacher(id) {
   showToast("Teacher profile deleted.");
 }
 
-function deleteLoad(id) {
+async function deleteLoad(id) {
   const load = state.loads.find((item) => item.id === id);
   if (!canManageLoad(load)) {
     showToast("You can only delete teaching loads assigned to your own profile.", "error");
@@ -1824,7 +1847,7 @@ function deleteLoad(id) {
   state.substitutionPlans = state.substitutionPlans
     .map((plan) => ({ ...plan, loadIds: (Array.isArray(plan.loadIds) ? plan.loadIds : []).filter((loadId) => loadId !== id) }))
     .filter((plan) => plan.loadIds.length > 0);
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.loads = previousLoads;
     state.substitutionPlans = previousSubstitutionPlans;
     render();
@@ -2103,7 +2126,7 @@ async function saveSettings(event) {
     periodTimes: previous.periodTimes ?? DEFAULT_PERIOD_TIMES,
     groupPeriodTimes,
   };
-  if (!saveState()) {
+  if (!(await saveState())) {
     state.settings = previous;
     return;
   }
@@ -2119,16 +2142,39 @@ function closeSidebar() {
   document.querySelector("#sidebar-scrim").classList.remove("is-visible");
 }
 
-function enterApplication() {
+async function enterApplication(user, errorElement) {
+  const { data: profile, error } = await supabaseClient
+    .from("profiles")
+    .select("id, email, username, role, teacher_id")
+    .eq("id", user.id)
+    .single();
+  if (error || !profile) {
+    displayLoginError(errorElement, `Couldn't load your account profile: ${error?.message ?? "No profile was found."}`);
+    await supabaseClient.auth.signOut();
+    return false;
+  }
+  state.currentAccount = {
+    id: profile.id,
+    email: profile.email,
+    username: profile.username,
+    role: profile.role,
+    teacherId: profile.teacher_id,
+  };
   if (!appInitialized) {
     if (!initializeApp()) return false;
     appInitialized = true;
-  } else {
-    state.activeView = "overview";
-    loadState();
-    render();
-    switchView("overview");
   }
+  try {
+    await loadCloudState();
+  } catch (loadError) {
+    state.currentAccount = null;
+    displayLoginError(errorElement, `Couldn't load shared school records: ${loadError.message}`);
+    await supabaseClient.auth.signOut();
+    return false;
+  }
+  state.activeView = "overview";
+  render();
+  switchView("overview");
   document.querySelector("#login-screen").hidden = true;
   document.querySelector("#app-shell").hidden = false;
   return true;
@@ -2139,7 +2185,7 @@ function setLoginMode(registering) {
   document.querySelector("#registration-form").hidden = !registering;
   document.querySelector("#login-error").hidden = true;
   document.querySelector("#registration-error").hidden = true;
-  document.querySelector(registering ? "#registration-name" : "#login-username").focus();
+  document.querySelector(registering ? "#registration-name" : "#login-email").focus();
 }
 
 function displayLoginError(element, message) {
@@ -2147,42 +2193,20 @@ function displayLoginError(element, message) {
   element.hidden = false;
 }
 
-function setAccountSession(account, errorElement) {
-  const signedInAccount = recordAccountLogin(account, errorElement);
-  if (!signedInAccount) return false;
-  try {
-    sessionStorage.setItem(LOGIN_SESSION_KEY, signedInAccount.id);
-  } catch (error) {
-    displayLoginError(errorElement, `Couldn't start a sign-in session: ${error.message}`);
-    return false;
-  }
-  state.currentAccount = signedInAccount;
-  if (!enterApplication()) {
-    state.currentAccount = null;
-    try {
-      sessionStorage.removeItem(LOGIN_SESSION_KEY);
-    } catch (error) {
-      displayLoginError(errorElement, `Couldn't clear the sign-in session: ${error.message}`);
-    }
-    return false;
-  }
-  return true;
-}
-
-function createTeacherAccount(event) {
+async function createTeacherAccount(event) {
   event.preventDefault();
   const errorElement = document.querySelector("#registration-error");
   const username = document.querySelector("#registration-username").value.trim();
-  const normalizedUsername = username.toLocaleLowerCase();
+  const email = document.querySelector("#registration-email").value.trim().toLocaleLowerCase();
   const password = document.querySelector("#registration-password").value;
   const confirmPassword = document.querySelector("#registration-confirm-password").value;
   if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) {
     displayLoginError(errorElement, "Use 3–40 letters, numbers, periods, underscores, or hyphens for the username.");
     return;
   }
-  if (normalizedUsername === LOGIN_USERNAME
-    || accounts.some((account) => account.username.toLocaleLowerCase() === normalizedUsername)) {
-    displayLoginError(errorElement, "That username is already in use. Please choose another.");
+  if (!email) {
+    displayLoginError(errorElement, "Enter a valid email address.");
+    document.querySelector("#registration-email").focus();
     return;
   }
   if (password.length < 8) {
@@ -2195,68 +2219,39 @@ function createTeacherAccount(event) {
     return;
   }
 
-  const teacherId = createId();
-  const timestamp = new Date().toISOString();
-  const account = {
-    id: createId(),
-    username,
-    password,
-    role: "teacher",
-    teacherId,
-    loginHistory: [timestamp],
-    loginCount: 1,
-    lastLoginAt: timestamp,
-  };
-  const teacher = {
-      id: teacherId,
-      name: document.querySelector("#registration-name").value.trim(),
-      employeeId: document.querySelector("#registration-employee-id").value.trim(),
-      position: document.querySelector("#registration-position").value.trim(),
-      status: "Active",
-    };
-  if (!teacher.name) {
+  const fullName = document.querySelector("#registration-name").value.trim();
+  if (!fullName) {
     displayLoginError(errorElement, "Enter your full name.");
     document.querySelector("#registration-name").focus();
     return;
   }
-
-  const previousSchoolRecords = localStorage.getItem(STORAGE_KEY);
-  let schoolRecords = { teachers: [], loads: [], substitutionPlans: [], settings: {} };
   try {
-    if (previousSchoolRecords) schoolRecords = JSON.parse(previousSchoolRecords);
-    if (!schoolRecords || !Array.isArray(schoolRecords.teachers) || !Array.isArray(schoolRecords.loads)) {
-      throw new Error("Saved school records have an invalid format.");
+    const { data, error } = await supabaseClient.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+          employee_id: document.querySelector("#registration-employee-id").value.trim(),
+          position: document.querySelector("#registration-position").value.trim(),
+          username: username.toLocaleLowerCase(),
+        },
+      },
+    });
+    if (error) throw error;
+    document.querySelector("#registration-form").reset();
+    if (data.session && data.user) {
+      await enterApplication(data.user, errorElement);
+    } else {
+      document.querySelector("#login-email").value = email;
+      setLoginMode(false);
+      displayLoginError(
+        document.querySelector("#login-error"),
+        "Account created. Check your email to confirm the account, then sign in.",
+      );
     }
-    schoolRecords.substitutionPlans = Array.isArray(schoolRecords.substitutionPlans)
-      ? schoolRecords.substitutionPlans
-      : [];
-    schoolRecords.teachers.push(teacher);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(schoolRecords));
   } catch (error) {
-    displayLoginError(errorElement, `Couldn't add this teacher to the local school records: ${error.message}`);
-    return;
-  }
-  const nextAccounts = [...accounts, account];
-  if (!saveAccounts(nextAccounts, errorElement)) {
-    try {
-      if (previousSchoolRecords === null) localStorage.removeItem(STORAGE_KEY);
-      else localStorage.setItem(STORAGE_KEY, previousSchoolRecords);
-    } catch (error) {
-      displayLoginError(errorElement, `Couldn't finish creating the account: ${error.message}`);
-      return;
-    }
-    return;
-  }
-  try {
-    sessionStorage.setItem(LOGIN_SESSION_KEY, account.id);
-  } catch (error) {
-    displayLoginError(errorElement, `Account created, but couldn't start a sign-in session: ${error.message}`);
-    return;
-  }
-  state.currentAccount = account;
-  if (!enterApplication()) {
-    state.currentAccount = null;
-    sessionStorage.removeItem(LOGIN_SESSION_KEY);
+    displayLoginError(errorElement, `Couldn't create the account: ${error.message}`);
   }
 }
 
@@ -2265,94 +2260,70 @@ function initialize() {
   const loginError = document.querySelector("#login-error");
   const registrationForm = document.querySelector("#registration-form");
   const registrationError = document.querySelector("#registration-error");
-  try {
-    accounts = loadAccounts();
-  } catch (error) {
-    displayLoginError(loginError, `Couldn't read teacher accounts: ${error.message}`);
+  if (!window.supabase?.createClient) {
+    displayLoginError(loginError, "The sign-in service could not be loaded. Check your internet connection and refresh the page.");
     return;
   }
-  loginForm.addEventListener("submit", (event) => {
+  supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  window.addEventListener("focus", refreshCloudState);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) refreshCloudState();
+  });
+  cloudRefreshTimer = window.setInterval(() => {
+    if (!document.hidden) refreshCloudState();
+  }, 30000);
+  loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const username = document.querySelector("#login-username").value.trim();
+    const email = document.querySelector("#login-email").value.trim();
     const password = document.querySelector("#login-password").value;
-    let account = accounts.find((item) => item.username.toLocaleLowerCase() === username.toLocaleLowerCase()
-      && item.password === password);
-    if (username === LOGIN_USERNAME && password === LOGIN_PASSWORD) {
-      account = accounts.find((item) => item.id === "legacy-admin") ?? {
-        id: "legacy-admin",
-        username: LOGIN_USERNAME,
-        role: "admin",
-        loginHistory: [],
-        loginCount: 0,
-      };
-    }
-    if (!account) {
-      displayLoginError(loginError, "Incorrect username or password.");
+    try {
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      loginError.hidden = true;
+      await enterApplication(data.user, loginError);
+    } catch (error) {
+      displayLoginError(loginError, `Couldn't sign in: ${error.message}`);
       document.querySelector("#login-password").value = "";
       document.querySelector("#login-password").focus();
-      return;
     }
-    loginError.hidden = true;
-    setAccountSession(account, loginError);
   });
-  registrationForm.addEventListener("submit", createTeacherAccount);
+  registrationForm.addEventListener("submit", async (event) => {
+    registrationError.hidden = true;
+    await createTeacherAccount(event);
+  });
   document.querySelector("#show-registration").addEventListener("click", () => setLoginMode(true));
   document.querySelector("#show-login").addEventListener("click", () => setLoginMode(false));
-  document.querySelector("#logout-button").addEventListener("click", () => {
+  document.querySelector("#logout-button").addEventListener("click", async () => {
     try {
-      sessionStorage.removeItem(LOGIN_SESSION_KEY);
+      const { error } = await supabaseClient.auth.signOut();
+      if (error) throw error;
     } catch (error) {
-      showToast(`Couldn't clear the sign-in session: ${error.message}`, "error");
+      showToast(`Couldn't sign out: ${error.message}`, "error");
       return;
     }
     closeSidebar();
+    window.clearInterval(cloudRefreshTimer);
+    cloudRefreshTimer = 0;
     document.querySelector("#app-shell").hidden = true;
     document.querySelector("#login-screen").hidden = false;
     state.currentAccount = null;
     document.querySelector("#login-form").reset();
     document.querySelector("#registration-form").reset();
     document.querySelector("#login-error").hidden = true;
+    registrationError.hidden = true;
     setLoginMode(false);
   });
 
-  try {
-    const sessionAccountId = sessionStorage.getItem(LOGIN_SESSION_KEY);
-    if (sessionAccountId) {
-      const account = sessionAccountId === "true" || sessionAccountId === "legacy-admin"
-        ? accounts.find((item) => item.id === "legacy-admin") ?? {
-          id: "legacy-admin",
-          username: LOGIN_USERNAME,
-          role: "admin",
-          loginHistory: [],
-          loginCount: 0,
-        }
-        : accounts.find((item) => item.id === sessionAccountId);
-      if (!account) {
-        sessionStorage.removeItem(LOGIN_SESSION_KEY);
-        displayLoginError(loginError, "This sign-in session is no longer valid. Please log in again.");
-        return;
-      }
-      state.currentAccount = account;
-      enterApplication();
+  supabaseClient.auth.getSession().then(({ data, error }) => {
+    if (error) {
+      displayLoginError(loginError, `Couldn't restore your sign-in session: ${error.message}`);
+      return;
     }
-  } catch (error) {
-    displayLoginError(loginError, `Couldn't check the sign-in session: ${error.message}`);
-  }
+    if (data.session?.user) enterApplication(data.session.user, loginError);
+  });
 }
 
 function initializeApp() {
-  try {
-    migrateTeacherAccountRecords();
-  } catch (error) {
-    displayLoginError(
-      document.querySelector("#login-error"),
-      `Couldn't prepare shared school records: ${error.message}`,
-    );
-    return false;
-  }
-  loadState();
-  render();
-
   elements.navLinks.forEach((link) => {
     if (link.dataset.view) link.addEventListener("click", () => switchView(link.dataset.view));
   });
@@ -2379,6 +2350,7 @@ function initializeApp() {
     schoolLogoPreviewUrl = URL.createObjectURL(file);
     updateSchoolLogoPreview(schoolLogoPreviewUrl);
   });
+  document.querySelector("#import-legacy-records").addEventListener("click", importLegacyRecords);
   document.querySelector("#remove-school-logo").addEventListener("click", () => {
     document.querySelector("#setting-school-logo").value = "";
     document.querySelector("#setting-remove-school-logo").checked = true;
