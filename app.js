@@ -3,6 +3,7 @@
 const STORAGE_KEY = "teacher-load-manager-v1";
 const LOGIN_SESSION_KEY = "teacher-load-manager-authenticated";
 const ACCOUNTS_KEY = "teacher-load-manager-accounts-v1";
+const ACCOUNT_MIGRATION_KEY = "teacher-load-manager-account-migration-v2";
 const LOGIN_USERNAME = "admin";
 const LOGIN_PASSWORD = "Admin@1831";
 let accounts = [];
@@ -68,10 +69,6 @@ function createId() {
   return globalThis.crypto?.randomUUID?.() ?? `record-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function accountStorageKey(account) {
-  return account?.role === "teacher" ? `${STORAGE_KEY}:account:${account.id}` : STORAGE_KEY;
-}
-
 function loadAccounts() {
   const saved = localStorage.getItem(ACCOUNTS_KEY);
   if (!saved) return [];
@@ -110,26 +107,66 @@ function recordAccountLogin(account, errorElement = null) {
   return updatedAccount;
 }
 
+function migrateTeacherAccountRecords() {
+  if (localStorage.getItem(ACCOUNT_MIGRATION_KEY) === "complete") return true;
+  let schoolRecords = { teachers: [], loads: [], substitutionPlans: [], settings: {} };
+  const savedSchoolRecords = localStorage.getItem(STORAGE_KEY);
+  if (savedSchoolRecords) {
+    schoolRecords = JSON.parse(savedSchoolRecords);
+    if (!schoolRecords || !Array.isArray(schoolRecords.teachers) || !Array.isArray(schoolRecords.loads)) {
+      throw new Error("Saved school records have an invalid format.");
+    }
+    schoolRecords.substitutionPlans = Array.isArray(schoolRecords.substitutionPlans)
+      ? schoolRecords.substitutionPlans
+      : [];
+  }
+  let changed = false;
+  accounts.filter((account) => account.role === "teacher" && account.teacherId).forEach((account) => {
+    const key = `${STORAGE_KEY}:account:${account.id}`;
+    const savedAccountRecords = localStorage.getItem(key);
+    if (!savedAccountRecords) return;
+    const accountRecords = JSON.parse(savedAccountRecords);
+    if (!accountRecords || !Array.isArray(accountRecords.teachers) || !Array.isArray(accountRecords.loads)) {
+      throw new Error(`Saved records for ${account.username} have an invalid format.`);
+    }
+    const teacher = accountRecords.teachers.find((item) => item.id === account.teacherId);
+    if (teacher && !schoolRecords.teachers.some((item) => item.id === teacher.id)) {
+      schoolRecords.teachers.push(teacher);
+      changed = true;
+    }
+    accountRecords.loads.filter((load) => load.teacherId === account.teacherId).forEach((load) => {
+      if (!schoolRecords.loads.some((item) => item.id === load.id)) {
+        schoolRecords.loads.push(load);
+        changed = true;
+      }
+    });
+    (accountRecords.substitutionPlans ?? []).forEach((plan) => {
+      if (!schoolRecords.substitutionPlans.some((item) => item.id === plan.id)) {
+        schoolRecords.substitutionPlans.push(plan);
+        changed = true;
+      }
+    });
+  });
+  if (changed) localStorage.setItem(STORAGE_KEY, JSON.stringify(schoolRecords));
+  localStorage.setItem(ACCOUNT_MIGRATION_KEY, "complete");
+  return true;
+}
+
 function loadState() {
   state.teachers = [];
   state.loads = [];
   state.substitutionPlans = [];
   state.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
   try {
-    const saved = localStorage.getItem(accountStorageKey(state.currentAccount));
+    const saved = localStorage.getItem(STORAGE_KEY);
     if (!saved) return;
     const parsed = JSON.parse(saved);
     if (!parsed || !Array.isArray(parsed.teachers) || !Array.isArray(parsed.loads)) {
       throw new Error("Saved school records have an invalid format.");
     }
-    const teacherId = state.currentAccount?.role === "teacher" ? state.currentAccount.teacherId : "";
-    state.teachers = teacherId
-      ? parsed.teachers.filter((teacher) => teacher.id === teacherId)
-      : parsed.teachers;
-    state.substitutionPlans = state.currentAccount?.role === "teacher"
-      ? []
-      : Array.isArray(parsed.substitutionPlans) ? parsed.substitutionPlans : [];
-    state.loads = parsed.loads.filter((load) => !teacherId || load.teacherId === teacherId).map((load) => {
+    state.teachers = parsed.teachers;
+    state.substitutionPlans = Array.isArray(parsed.substitutionPlans) ? parsed.substitutionPlans : [];
+    state.loads = parsed.loads.map((load) => {
       if (load.minutes !== undefined) return { ...load, minutes: Number(load.minutes) };
       const legacyHours = Number(load.hours);
       const { hours, ...legacyLoad } = load;
@@ -157,7 +194,7 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(accountStorageKey(state.currentAccount), JSON.stringify({
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
       teachers: state.teachers,
       loads: state.loads,
       substitutionPlans: state.substitutionPlans,
@@ -359,6 +396,10 @@ function makeStatusCell(row, status) {
 }
 
 function makeActionCell(row, type, id, label) {
+  if (isTeacherAccount()) {
+    row.append(document.createElement("td"));
+    return;
+  }
   const cell = document.createElement("td");
   const actions = document.createElement("div");
   actions.className = "row-actions";
@@ -389,6 +430,29 @@ function setEmptyState(tableBody, emptyState, hasRows) {
   emptyState.classList.toggle("visible", !hasRows);
 }
 
+function isTeacherAccount() {
+  return state.currentAccount?.role === "teacher";
+}
+
+function isAdminAccount() {
+  return state.currentAccount?.role === "admin";
+}
+
+function currentTeacherId() {
+  return isTeacherAccount() ? state.currentAccount.teacherId : "";
+}
+
+function visibleLoads() {
+  const teacherId = currentTeacherId();
+  return state.loads.filter((load) => !teacherId || load.teacherId === teacherId);
+}
+
+function visibleSubstitutionPlans() {
+  const teacherId = currentTeacherId();
+  return state.substitutionPlans.filter((plan) =>
+    !teacherId || plan.submittedBy === state.currentAccount.id || plan.leaveTeacherId === teacherId);
+}
+
 function render() {
   renderHeader();
   renderStats();
@@ -397,30 +461,45 @@ function render() {
   renderRecentLoads();
   renderSubstitutionPlans();
   renderLoginActivity();
-  const isTeacherAccount = state.currentAccount?.role === "teacher";
-  document.querySelector("#add-teacher").hidden = isTeacherAccount;
-  document.querySelectorAll("[data-add-teacher]").forEach((button) => { button.hidden = isTeacherAccount; });
-  document.querySelector("#teachers-title").textContent = isTeacherAccount ? "My account" : "Teachers";
-  document.querySelector("#teacher-page-eyebrow").textContent = isTeacherAccount ? "MY ACCOUNT" : "SCHOOL PERSONNEL";
-  document.querySelector("#teacher-list-title").textContent = isTeacherAccount ? "My teacher profile" : "Teacher directory";
-  document.querySelector("#teacher-page-subtitle").textContent = isTeacherAccount
-    ? "View and update your profile and review your assigned minutes."
-    : "Manage teacher profiles and review their assigned minutes.";
-  document.querySelector("#teacher-search").closest(".search-box").hidden = isTeacherAccount;
-  if (isTeacherAccount) {
+  const teacherAccount = isTeacherAccount();
+  document.querySelector("#add-teacher").hidden = teacherAccount;
+  document.querySelectorAll("[data-add-teacher]").forEach((button) => { button.hidden = teacherAccount; });
+  document.querySelector("#nav-teachers").hidden = teacherAccount;
+  document.querySelector("#sidebar-management-label").hidden = teacherAccount;
+  document.querySelector("#nav-management").hidden = teacherAccount;
+  document.querySelector("#open-groups-periods").hidden = teacherAccount;
+  document.querySelector("#open-settings").hidden = teacherAccount;
+  document.querySelector("#sidebar-export").hidden = teacherAccount;
+  document.querySelector("#sidebar-export").closest(".help-card").hidden = teacherAccount;
+  document.querySelector("#add-load").hidden = false;
+  document.querySelector("#export-loads").hidden = teacherAccount;
+  document.querySelector("#print-overview").hidden = teacherAccount;
+  document.querySelector("#teachers-title").textContent = "Teachers";
+  document.querySelector("#teacher-page-eyebrow").textContent = "SCHOOL PERSONNEL";
+  document.querySelector("#teacher-list-title").textContent = "Teacher directory";
+  document.querySelector("#teacher-page-subtitle").textContent = "Manage teacher profiles and review their assigned minutes.";
+  document.querySelector("#teacher-search").closest(".search-box").hidden = teacherAccount;
+  document.querySelector("#view-teachers").hidden = teacherAccount;
+  document.querySelector("#view-overview .stat-card:nth-child(1) .stat-label").textContent =
+    teacherAccount ? "Your profile" : "Total teachers";
+  document.querySelector("#view-overview #recent-title").textContent =
+    teacherAccount ? "Your teaching assignments" : "Teaching assignments";
+  document.querySelector("#view-overview .getting-started .setup-step").dataset.go =
+    teacherAccount ? "loads" : "teachers";
+  if (teacherAccount) {
     document.querySelector("#overview-eyebrow-label").textContent = "MY TEACHING LOAD";
     document.querySelector("#page-title").textContent = "Your dashboard";
     document.querySelector("#view-overview .page-subtitle").textContent =
-      "Manage your teaching assignments and account details.";
+      "Add your teaching loads and submit leave-coverage proposals for admin review.";
     document.querySelector("#view-overview .stat-card:nth-child(1) .stat-caption").textContent = "Your teacher account";
     document.querySelector("#view-overview .stat-card:nth-child(2) .stat-caption").textContent = "Your saved assignments";
     document.querySelector("#view-overview .stat-card:nth-child(3) .stat-caption").textContent = "Your weekly minutes";
     document.querySelector(".getting-started h2").textContent = "Your teaching loads";
     document.querySelector(".getting-started > p").textContent =
-      "Review your teacher profile, then add assignments for your classes.";
+      "Review your teaching loads, then add assignments for your classes.";
     const [profileStep, loadStep] = document.querySelectorAll(".setup-step");
-    profileStep.querySelector("strong").textContent = "Review your profile";
-    profileStep.querySelector("small").textContent = "Check your teacher details";
+    profileStep.querySelector("strong").textContent = "Review your teaching loads";
+    profileStep.querySelector("small").textContent = "See your saved assignments";
     loadStep.querySelector("strong").textContent = "Add a teaching load";
     loadStep.querySelector("small").textContent = "Record your subjects and classes";
   } else {
@@ -434,6 +513,8 @@ function render() {
       "Across all teacher profiles";
     document.querySelector("#view-overview .stat-card:nth-child(3) .stat-caption").textContent =
       "Combined minutes per week";
+    document.querySelector("#view-overview .stat-card:nth-child(1) .stat-label").textContent = "Total teachers";
+    document.querySelector("#view-overview #recent-title").textContent = "Teaching assignments";
     document.querySelector(".getting-started h2").textContent = "Set up your school records";
     document.querySelector(".getting-started > p").textContent =
       "Add your teacher profiles first, then record each learning area and class assignment.";
@@ -444,20 +525,35 @@ function render() {
     loadStep.querySelector("small").textContent = "Connect classes and learning areas";
   }
   document.querySelector("#teacher-nav-count").textContent = String(state.teachers.length);
-  document.querySelector("#load-nav-count").textContent = String(state.loads.length);
-  document.querySelector("#teacher-dashboard-load-count").textContent = `${state.loads.length} ${state.loads.length === 1 ? "assignment" : "assignments"}`;
-  document.querySelector("#teacher-dashboard-substitution-count").textContent = `${state.substitutionPlans.length} ${state.substitutionPlans.length === 1 ? "plan" : "plans"}`;
+  document.querySelector("#load-nav-count").textContent = String(visibleLoads().length);
+  document.querySelector("#teacher-dashboard-load-count").textContent = `${visibleLoads().length} ${visibleLoads().length === 1 ? "assignment" : "assignments"}`;
+  document.querySelector("#teacher-dashboard-substitution-count").textContent = `${visibleSubstitutionPlans().length} ${visibleSubstitutionPlans().length === 1 ? "plan" : "plans"}`;
+  document.querySelector("#teacher-load-shortcut-copy").textContent = teacherAccount
+    ? "View and add your own teaching assignments"
+    : "View and manage teacher assignments";
+  document.querySelector("#teacher-substitution-shortcut-copy").textContent = teacherAccount
+    ? "Submit a proposal for admin review"
+    : "Review and manage staff coverage";
 }
 
 function renderLoginActivity() {
   const body = document.querySelector("#account-login-body");
   const empty = document.querySelector("#account-login-empty");
-  const history = state.currentAccount?.loginHistory ?? [];
+  const history = isAdminAccount()
+    ? accounts.flatMap((account) => (account.loginHistory ?? []).map((timestamp) => ({
+      account,
+      timestamp,
+    })))
+    : (state.currentAccount?.loginHistory ?? []).map((timestamp) => ({
+      account: state.currentAccount,
+      timestamp,
+    }));
+  history.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
   setEmptyState(body, empty, history.length > 0);
   document.querySelector("#account-login-caption").textContent = history.length
-    ? `${Number(state.currentAccount?.loginCount) || history.length} successful ${Number(state.currentAccount?.loginCount) === 1 ? "sign-in" : "sign-ins"} recorded`
+    ? `${history.length} successful ${history.length === 1 ? "sign-in" : "sign-ins"} recorded`
     : "No sign-ins recorded";
-  [...history].reverse().forEach((timestamp) => {
+  [...history].reverse().forEach(({ account, timestamp }) => {
     const row = document.createElement("tr");
     const dateCell = document.createElement("td");
     const date = new Date(timestamp);
@@ -465,7 +561,7 @@ function renderLoginActivity() {
       ? "Unknown date"
       : new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
     row.append(dateCell);
-    makeCell(row, state.currentAccount?.username ?? "—");
+    makeCell(row, account?.username ?? "—");
     makeCell(row, "Successful sign-in");
     body.append(row);
   });
@@ -510,9 +606,10 @@ function renderHeader() {
 }
 
 function renderStats() {
-  document.querySelector("#stat-teachers").textContent = String(state.teachers.length);
-  document.querySelector("#stat-loads").textContent = String(state.loads.length);
-  const totalMinutes = state.loads.reduce((total, load) => total + Number(load.minutes || 0), 0);
+  const loads = visibleLoads();
+  document.querySelector("#stat-teachers").textContent = String(isTeacherAccount() ? 1 : state.teachers.length);
+  document.querySelector("#stat-loads").textContent = String(loads.length);
+  const totalMinutes = loads.reduce((total, load) => total + Number(load.minutes || 0), 0);
   const minutesValue = document.querySelector("#stat-minutes");
   minutesValue.replaceChildren(document.createTextNode(String(totalMinutes)));
   const unit = document.createElement("span");
@@ -526,6 +623,7 @@ function renderTeachers() {
   const emptyState = document.querySelector("#teachers-empty");
   const query = state.teacherQuery.trim().toLocaleLowerCase();
   const matching = state.teachers
+    .filter((teacher) => !isTeacherAccount() || teacher.id === currentTeacherId())
     .filter((teacher) => `${teacher.name} ${teacher.employeeId ?? ""} ${teacher.position ?? ""} ${teacher.status ?? ""}`.toLocaleLowerCase().includes(query))
     .sort((a, b) => a.name.localeCompare(b.name));
   setEmptyState(tableBody, emptyState, matching.length > 0);
@@ -556,18 +654,19 @@ function renderLoads() {
   const tableBody = document.querySelector("#loads-body");
   const emptyState = document.querySelector("#loads-empty");
   const query = state.loadQuery.trim().toLocaleLowerCase();
-  const matching = state.loads
+  const loads = visibleLoads();
+  const matching = loads
     .filter((load) => `${teacherName(load.teacherId)} ${load.subject} ${load.grade} ${load.section ?? ""} ${load.groupName ?? ""} ${load.period ?? ""} ${formatLoadDays(load.days)} ${periodTime(load.period, load.groupName)} ${load.schedule ?? ""}`.toLocaleLowerCase().includes(query))
     .sort((a, b) => teacherName(a.teacherId).localeCompare(teacherName(b.teacherId)) || compareLoadSchedules(a, b));
   setEmptyState(tableBody, emptyState, matching.length > 0);
-  document.querySelector("#load-list-caption").textContent = `${state.loads.length} ${state.loads.length === 1 ? "teaching assignment" : "teaching assignments"}`;
+  document.querySelector("#load-list-caption").textContent = `${loads.length} ${loads.length === 1 ? "teaching assignment" : "teaching assignments"}`;
   if (!matching.length) {
     const message = emptyState.querySelector("strong");
     const description = emptyState.querySelector("p");
     const addButton = emptyState.querySelector("button");
-    message.textContent = state.loads.length ? "No matching assignments" : "No assignments to show";
-    description.textContent = state.loads.length ? "Try another teacher, class, or learning area." : state.teachers.length ? "Add a teaching load to get started." : "Add a teacher profile before creating an assignment.";
-    addButton.hidden = state.teachers.length === 0 || state.loads.length > 0;
+    message.textContent = loads.length ? "No matching assignments" : "No assignments to show";
+    description.textContent = loads.length ? "Try another teacher, class, or learning area." : state.teachers.length ? "Add a teaching load to get started." : "Add a teacher profile before creating an assignment.";
+    addButton.hidden = state.teachers.length === 0 || loads.length > 0;
     return;
   }
   matching.forEach((load, index) => {
@@ -589,7 +688,7 @@ function renderLoads() {
 function renderRecentLoads() {
   const tableBody = document.querySelector("#recent-loads-body");
   const emptyState = document.querySelector("#recent-empty");
-  const recent = [...state.loads].slice(-5).reverse();
+  const recent = [...visibleLoads()].slice(-5).reverse();
   setEmptyState(tableBody, emptyState, recent.length > 0);
   if (!recent.length) return;
   recent.forEach((load, index) => {
@@ -609,18 +708,23 @@ function renderRecentLoads() {
 function renderSubstitutionPlans() {
   const tableBody = document.querySelector("#substitution-plans-body");
   const emptyState = document.querySelector("#substitution-plans-empty");
-  const teacherAccount = state.currentAccount?.role === "teacher";
+  const teacherAccount = isTeacherAccount();
   document.querySelector("#teacher-substitution-note").hidden = !teacherAccount;
-  document.querySelector("#view-substitutions .list-panel").hidden = teacherAccount;
-  document.querySelector("#add-substitution-plan").hidden = teacherAccount;
-  document.querySelectorAll("[data-add-substitution-plan]").forEach((button) => { button.hidden = teacherAccount; });
-  if (teacherAccount) {
-    setEmptyState(tableBody, emptyState, false);
-    document.querySelector("#substitution-print-summary").textContent = "";
-    document.querySelector("#substitution-print-loads").replaceChildren();
-    return;
-  }
-  const plans = [...state.substitutionPlans].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  document.querySelector("#view-substitutions .list-panel").hidden = false;
+  document.querySelector("#add-substitution-plan").hidden = false;
+  document.querySelectorAll("[data-add-substitution-plan]").forEach((button) => { button.hidden = false; });
+  document.querySelector("#add-substitution-plan").textContent = teacherAccount
+    ? "＋ Submit coverage proposal"
+    : "＋ Create substitution plan";
+  document.querySelector("#substitution-plans-empty strong").textContent =
+    teacherAccount ? "No coverage proposals yet" : "No substitution plans yet";
+  document.querySelector("#substitution-plans-empty p").textContent = teacherAccount
+    ? "Submit a coverage proposal when your employment status is marked On leave."
+    : "Create a plan to assign teaching loads to an available teacher.";
+  document.querySelector("#substitution-plans-empty button").textContent =
+    teacherAccount ? "Submit coverage proposal" : "Create substitution plan";
+  const plans = [...visibleSubstitutionPlans()].sort((a, b) => a.startDate.localeCompare(b.startDate));
+  tableBody.replaceChildren();
   setEmptyState(tableBody, emptyState, plans.length > 0);
   document.querySelector("#substitution-plan-caption").textContent =
     `${plans.length} ${plans.length === 1 ? "substitution plan" : "substitution plans"}`;
@@ -631,12 +735,20 @@ function renderSubstitutionPlans() {
     makeCell(row, leaveTeacher?.name ?? "Unknown teacher", "table-primary");
     makeCell(row, substituteTeacher?.name ?? "Unknown teacher", "table-primary");
     makeCell(row, `${formatDate(plan.startDate)} – ${formatDate(plan.endDate)}`);
-    const coveredLoads = plan.loadIds
+    const coveredLoads = (Array.isArray(plan.loadIds) ? plan.loadIds : [])
       .map((id) => state.loads.find((load) => load.id === id))
       .filter(Boolean);
     makeCell(row, coveredLoads.map((load) =>
       `${load.subject} · ${load.grade}${load.section ? ` ${load.section}` : ""} · ${load.groupName || "No group"} · Period ${load.period || "—"}${load.schedule ? ` · ${load.schedule}` : ""} · ${formatLoadDays(load.days)}`,
     ).join("; "));
+    const status = plan.status === "rejected" ? "Rejected"
+      : plan.status === "pending" ? "Pending admin approval" : "Approved";
+    const statusCell = document.createElement("td");
+    const statusBadge = document.createElement("span");
+    statusBadge.className = `status-badge substitution-status-${plan.status === "pending" ? "pending" : plan.status === "rejected" ? "rejected" : "approved"}`;
+    statusBadge.textContent = status;
+    statusCell.append(statusBadge);
+    row.append(statusCell);
     const actionsCell = document.createElement("td");
     const actions = document.createElement("div");
     actions.className = "row-actions";
@@ -647,34 +759,103 @@ function renderSubstitutionPlans() {
     preview.title = "Open print preview for substitution plan";
     preview.textContent = "Print preview";
     preview.addEventListener("click", () => openSubstitutionPlanPreview(plan.id));
-    const edit = document.createElement("button");
-    edit.className = "row-action";
-    edit.type = "button";
-    edit.setAttribute("aria-label", `Edit substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
-    edit.title = "Edit substitution plan";
-    edit.textContent = "✎";
-    edit.addEventListener("click", () => openSubstitutionDialog(plan.id));
-    const remove = document.createElement("button");
-    remove.className = "row-action delete";
-    remove.type = "button";
-    remove.setAttribute("aria-label", `Delete substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
-    remove.title = "Delete substitution plan";
-    remove.textContent = "×";
-    remove.addEventListener("click", () => deleteSubstitutionPlan(plan.id));
-    actions.append(preview, edit, remove);
+    actions.append(preview);
+    if (isAdminAccount()) {
+      if (plan.status === "pending") {
+        actions.append(
+          makePlanReviewButton(plan, "approved", "Approve proposal", "✓"),
+          makePlanReviewButton(plan, "rejected", "Reject proposal", "×"),
+        );
+      }
+      const edit = document.createElement("button");
+      edit.className = "row-action";
+      edit.type = "button";
+      edit.setAttribute("aria-label", `Edit substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
+      edit.title = "Edit substitution plan";
+      edit.textContent = "✎";
+      edit.addEventListener("click", () => openSubstitutionDialog(plan.id));
+      const remove = document.createElement("button");
+      remove.className = "row-action delete";
+      remove.type = "button";
+      remove.setAttribute("aria-label", `Delete substitution plan for ${leaveTeacher?.name ?? "teacher"}`);
+      remove.title = "Delete substitution plan";
+      remove.textContent = "×";
+      remove.addEventListener("click", () => deleteSubstitutionPlan(plan.id));
+      actions.append(edit, remove);
+    }
     actionsCell.append(actions);
     row.append(actionsCell);
     tableBody.append(row);
   });
 }
 
+function makePlanReviewButton(plan, status, label, mark) {
+  const button = document.createElement("button");
+  button.className = "row-action";
+  button.type = "button";
+  button.setAttribute("aria-label", `${label} for substitution plan`);
+  button.title = label;
+  button.textContent = mark;
+  button.addEventListener("click", () => reviewSubstitutionPlan(plan.id, status));
+  return button;
+}
+
+function reviewSubstitutionPlan(planId, status) {
+  if (!isAdminAccount() || !["approved", "rejected"].includes(status)) {
+    showToast("Only the admin can review substitution proposals.", "error");
+    return;
+  }
+  const plan = state.substitutionPlans.find((item) => item.id === planId);
+  if (!plan || plan.status !== "pending") return;
+  if (status === "approved") {
+    const loadIds = Array.isArray(plan.loadIds) ? plan.loadIds : [];
+    const coveredLoads = loadIds.map((loadId) =>
+      state.loads.find((load) => load.id === loadId && load.teacherId === plan.leaveTeacherId));
+    const leaveTeacher = state.teachers.find((teacher) => teacher.id === plan.leaveTeacherId);
+    const substituteTeacher = state.teachers.find((teacher) => teacher.id === plan.substituteTeacherId);
+    if (leaveTeacher?.status !== "On leave"
+      || !substituteTeacher
+      || (substituteTeacher.status || "Active") !== "Active"
+      || !plan.startDate || !plan.endDate || plan.startDate > plan.endDate
+      || !loadIds.length || new Set(loadIds).size !== loadIds.length
+      || coveredLoads.some((load) => !load || !loadOccursDuringDates(load, plan.startDate, plan.endDate))) {
+      showToast("This proposal is no longer valid. Check teacher status and assignments before approving.", "error");
+      return;
+    }
+    const conflictingLoad = coveredLoads.find((load) =>
+      substitutionConflict(load, plan.substituteTeacherId, plan.startDate, plan.endDate, plan.id));
+    if (conflictingLoad) {
+      showToast(`${conflictingLoad.subject} now conflicts with the substitute's schedule. Edit the proposal before approving.`, "error");
+      return;
+    }
+    for (let index = 0; index < coveredLoads.length; index += 1) {
+      if (coveredLoads.slice(0, index).some((load) =>
+        loadsOverlap(coveredLoads[index], load, plan.startDate, plan.endDate))) {
+        showToast("This proposal contains overlapping assignments. Edit it before approving.", "error");
+        return;
+      }
+    }
+  }
+  const previousPlans = state.substitutionPlans;
+  state.substitutionPlans = previousPlans.map((item) =>
+    item.id === planId ? { ...item, status, reviewedAt: new Date().toISOString() } : item);
+  if (!saveState()) {
+    state.substitutionPlans = previousPlans;
+    return;
+  }
+  render();
+  showToast(status === "approved" ? "Substitution proposal approved." : "Substitution proposal rejected.");
+}
+
 function switchView(viewName) {
+  if (isTeacherAccount() && !["overview", "loads", "substitutions"].includes(viewName)) {
+    showToast("Teacher accounts cannot manage school records or settings.", "error");
+    return;
+  }
   state.activeView = viewName;
   elements.views.forEach((view) => view.classList.toggle("active", view.id === `view-${viewName}`));
   elements.navLinks.forEach((link) => link.classList.toggle("active", Boolean(link.dataset.view) && link.dataset.view === viewName));
-  const label = viewName === "teachers" && state.currentAccount?.role === "teacher"
-    ? "My account"
-    : { overview: "Overview", teachers: "Teachers", loads: "Teaching loads", substitutions: "Substitution plans" }[viewName];
+  const label = { overview: "Overview", teachers: "Teachers", loads: "Teaching loads", substitutions: "Substitution plans" }[viewName];
   elements.breadcrumb.textContent = label;
   document.title = `${label} · Teacher Load Manager`;
   closeSidebar();
@@ -759,6 +940,7 @@ function substituteCommitments(teacherId, startDate, endDate, excludedPlanId = "
   const commitments = teacherLoads(teacherId).map((load) => ({ load, plan: null }));
   state.substitutionPlans
     .filter((plan) => plan.id !== excludedPlanId
+      && plan.status !== "rejected"
       && plan.substituteTeacherId === teacherId
       && plan.startDate <= endDate && startDate <= plan.endDate)
     .forEach((plan) => {
@@ -883,17 +1065,20 @@ function populateSubstitutionFilters() {
 }
 
 function openSubstitutionDialog(planId = "") {
-  if (state.currentAccount?.role === "teacher") {
-    showToast("Substitution plans are managed from the school admin account.", "error");
+  if (isTeacherAccount() && planId) {
+    showToast("Submitted coverage proposals are reviewed by the admin.", "error");
     return;
   }
   const plan = state.substitutionPlans.find((item) => item.id === planId);
   state.editingSubstitutionPlanId = plan?.id ?? "";
   const form = document.querySelector("#substitution-form");
   form.reset();
-  document.querySelector("#substitution-dialog-title").textContent = plan ? "Edit substitution plan" : "Create substitution plan";
+  const teacherAccount = isTeacherAccount();
+  document.querySelector("#substitution-dialog-title").textContent = plan
+    ? "Edit substitution plan"
+    : teacherAccount ? "Submit coverage proposal" : "Create substitution plan";
   document.querySelector("#substitution-form button[type=\"submit\"]").textContent =
-    plan ? "Save changes" : "Save substitution plan";
+    plan ? "Save changes" : teacherAccount ? "Submit for admin review" : "Save substitution plan";
   const leaveSelect = document.querySelector("#substitution-leave-teacher");
   const substituteSelect = document.querySelector("#substitution-cover-teacher");
   const leaveHelp = document.querySelector("#substitution-leave-help");
@@ -901,7 +1086,8 @@ function openSubstitutionDialog(planId = "") {
   substituteSelect.replaceChildren(new Option("Select available teacher", ""));
   populateSubstitutionFilters();
   state.teachers
-    .filter((teacher) => teacher.status === "On leave")
+    .filter((teacher) => teacher.status === "On leave"
+      && (!teacherAccount || teacher.id === currentTeacherId()))
     .sort((a, b) => a.name.localeCompare(b.name))
     .forEach((teacher) => leaveSelect.add(new Option(teacher.name, teacher.id)));
   leaveHelp.hidden = leaveSelect.options.length > 1;
@@ -917,7 +1103,7 @@ function openSubstitutionDialog(planId = "") {
     document.querySelector("#substitution-end-date").value = plan.endDate;
     populateSubstitutionLoads(plan.leaveTeacherId, "", plan.startDate, plan.endDate);
     document.querySelectorAll('#substitution-load-options input[name="loadIds"]').forEach((input) => {
-      input.checked = plan.loadIds.includes(input.value);
+      input.checked = (Array.isArray(plan.loadIds) ? plan.loadIds : []).includes(input.value);
     });
     populateSubstitutionTeachers(plan.leaveTeacherId, plan.startDate, plan.endDate);
     populateSubstitutionLoads(
@@ -927,6 +1113,13 @@ function openSubstitutionDialog(planId = "") {
       plan.endDate,
     );
     document.querySelector("#substitution-cover-teacher").value = plan.substituteTeacherId;
+  } else if (teacherAccount) {
+    const ownTeacher = state.teachers.find((teacher) => teacher.id === currentTeacherId());
+    if (ownTeacher?.status === "On leave") {
+      leaveSelect.value = ownTeacher.id;
+      populateSubstitutionTeachers(ownTeacher.id);
+      populateSubstitutionLoads(ownTeacher.id);
+    }
   } else {
     populateSubstitutionTeachers("");
     populateSubstitutionLoads("");
@@ -1000,7 +1193,7 @@ function printSubstitutionSheet() {
 }
 
 function openSubstitutionPlanPreview(planId) {
-  const plan = state.substitutionPlans.find((item) => item.id === planId);
+  const plan = visibleSubstitutionPlans().find((item) => item.id === planId);
   if (!plan) {
     showToast("Couldn't find this substitution plan.", "error");
     return;
@@ -1011,7 +1204,7 @@ function openSubstitutionPlanPreview(planId) {
     showToast("This plan's teacher details are missing, so it can't be previewed.", "error");
     return;
   }
-  const loads = plan.loadIds
+  const loads = (Array.isArray(plan.loadIds) ? plan.loadIds : [])
     .map((id) => state.loads.find((load) => load.id === id))
     .filter(Boolean);
   const summary = `Teacher on leave: ${leaveTeacher.name} · Substitute: ${substituteTeacher.name} · Leave dates: ${formatDate(plan.startDate)} – ${formatDate(plan.endDate)}`;
@@ -1044,11 +1237,15 @@ function openSubstitutionPlanPreview(planId) {
 
 function saveSubstitutionPlan(event) {
   event.preventDefault();
-  if (state.currentAccount?.role === "teacher") {
-    showToast("Substitution plans are managed from the school admin account.", "error");
+  if (!isAdminAccount() && !isTeacherAccount()) {
+    showToast("Sign in with an authorized account to manage substitution plans.", "error");
     return;
   }
   const isEditing = Boolean(state.editingSubstitutionPlanId);
+  if (isTeacherAccount() && isEditing) {
+    showToast("Submitted coverage proposals are reviewed by the admin.", "error");
+    return;
+  }
   const form = new FormData(event.currentTarget);
   const leaveTeacherId = String(form.get("leaveTeacherId") ?? "");
   const substituteTeacherId = String(form.get("substituteTeacherId") ?? "");
@@ -1058,6 +1255,10 @@ function saveSubstitutionPlan(event) {
   const leaveTeacher = state.teachers.find((teacher) => teacher.id === leaveTeacherId);
   const substituteTeacher = state.teachers.find((teacher) => teacher.id === substituteTeacherId);
 
+  if (isTeacherAccount() && leaveTeacherId !== currentTeacherId()) {
+    showToast("You can only submit a coverage proposal for your own leave.", "error");
+    return;
+  }
   if (leaveTeacher?.status !== "On leave") {
     showToast("Select a teacher whose employment status is On leave.", "error");
     document.querySelector("#substitution-leave-teacher").focus();
@@ -1109,6 +1310,12 @@ function saveSubstitutionPlan(event) {
     startDate,
     endDate,
     loadIds,
+    submittedBy: isTeacherAccount() ? state.currentAccount.id : state.substitutionPlans
+      .find((item) => item.id === state.editingSubstitutionPlanId)?.submittedBy,
+    status: isTeacherAccount() ? "pending" : state.editingSubstitutionPlanId
+      ? state.substitutionPlans.find((item) => item.id === state.editingSubstitutionPlanId)?.status ?? "approved"
+      : "approved",
+    submittedAt: isTeacherAccount() ? new Date().toISOString() : undefined,
   };
   const previousPlans = state.substitutionPlans;
   if (state.editingSubstitutionPlanId) {
@@ -1122,11 +1329,17 @@ function saveSubstitutionPlan(event) {
   }
   state.editingSubstitutionPlanId = "";
   document.querySelector("#substitution-dialog").close();
-  renderSubstitutionPlans();
-  showToast(isEditing ? "Substitution plan updated." : "Substitution plan saved.");
+  render();
+  showToast(isEditing ? "Substitution plan updated."
+    : isTeacherAccount() ? "Coverage proposal submitted for admin review."
+      : "Substitution plan saved.");
 }
 
 function deleteSubstitutionPlan(id) {
+  if (!isAdminAccount()) {
+    showToast("Only the admin can delete or manage substitution plans.", "error");
+    return;
+  }
   const plan = state.substitutionPlans.find((item) => item.id === id);
   if (!plan || !window.confirm("Delete this substitution plan?")) return;
   const previousPlans = state.substitutionPlans;
@@ -1140,12 +1353,11 @@ function deleteSubstitutionPlan(id) {
 }
 
 function openTeacherDialog(teacherId) {
-  const teacher = state.teachers.find((item) => item.id === teacherId);
-  if (state.currentAccount?.role === "teacher"
-    && (!teacher || teacher.id !== state.currentAccount.teacherId)) {
-    showToast("Teacher accounts can only update their own profile.", "error");
+  if (!isAdminAccount()) {
+    showToast("Only the admin can manage teacher profiles.", "error");
     return;
   }
+  const teacher = state.teachers.find((item) => item.id === teacherId);
   document.querySelector("#teacher-form").reset();
   document.querySelector("#teacher-id").value = teacher?.id ?? "";
   document.querySelector("#teacher-name").value = teacher?.name ?? "";
@@ -1158,6 +1370,14 @@ function openTeacherDialog(teacherId) {
 }
 
 function openLoadDialog(loadId, selectedTeacherId = "") {
+  if (isTeacherAccount() && loadId) {
+    showToast("Teachers can add loads, but only the admin can edit an existing assignment.", "error");
+    return;
+  }
+  if (!isAdminAccount() && !isTeacherAccount()) {
+    showToast("Sign in with an authorized account to manage teaching loads.", "error");
+    return;
+  }
   if (!state.teachers.length) {
     showToast("Add a teacher profile before creating a teaching assignment.", "error");
     switchView("teachers");
@@ -1166,7 +1386,10 @@ function openLoadDialog(loadId, selectedTeacherId = "") {
   const load = state.loads.find((item) => item.id === loadId);
   const teacherSelect = document.querySelector("#load-teacher");
   teacherSelect.replaceChildren();
-  state.teachers.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((teacher) => {
+  const teachersForLoad = isTeacherAccount()
+    ? state.teachers.filter((teacher) => teacher.id === currentTeacherId())
+    : state.teachers;
+  teachersForLoad.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach((teacher) => {
     const option = document.createElement("option");
     option.value = teacher.id;
     option.textContent = teacher.name;
@@ -1226,12 +1449,12 @@ function openLoadDialog(loadId, selectedTeacherId = "") {
 
 function saveTeacher(event) {
   event.preventDefault();
-  const form = new FormData(event.currentTarget);
-  const id = document.querySelector("#teacher-id").value;
-  if (state.currentAccount?.role === "teacher" && id !== state.currentAccount.teacherId) {
-    showToast("Teacher accounts can only update their own profile.", "error");
+  if (!isAdminAccount()) {
+    showToast("Only the admin can manage teacher profiles.", "error");
     return;
   }
+  const form = new FormData(event.currentTarget);
+  const id = document.querySelector("#teacher-id").value;
   const employeeId = String(form.get("employeeId") ?? "").trim();
   if (employeeId && state.teachers.some((teacher) => teacher.id !== id && teacher.employeeId?.toLocaleLowerCase() === employeeId.toLocaleLowerCase())) {
     showToast("That employee ID is already used by another teacher.", "error");
@@ -1260,6 +1483,10 @@ function saveTeacher(event) {
 
 function saveLoad(event) {
   event.preventDefault();
+  if (!isAdminAccount() && !isTeacherAccount()) {
+    showToast("Sign in with an authorized account to manage teaching loads.", "error");
+    return;
+  }
   const addAnother = event.submitter?.value === "add-another";
   const form = new FormData(event.currentTarget);
   const minutes = Number(form.get("minutes"));
@@ -1281,7 +1508,7 @@ function saveLoad(event) {
     minutes,
     schedule: String(form.get("schedule") ?? "").trim(),
   };
-  if (state.currentAccount?.role === "teacher" && record.teacherId !== state.currentAccount.teacherId) {
+  if (isTeacherAccount() && (id || record.teacherId !== currentTeacherId())) {
     showToast("You can only assign teaching loads to your own profile.", "error");
     return;
   }
@@ -1358,6 +1585,10 @@ function previewTeacherLoads() {
 }
 
 function deleteTeacher(id) {
+  if (!isAdminAccount()) {
+    showToast("Only the admin can manage teacher profiles.", "error");
+    return;
+  }
   const teacher = state.teachers.find((item) => item.id === id);
   if (!teacher) return;
   if (state.currentAccount?.role === "teacher" && id === state.currentAccount.teacherId) {
@@ -1388,6 +1619,10 @@ function deleteTeacher(id) {
 }
 
 function deleteLoad(id) {
+  if (!isAdminAccount()) {
+    showToast("Only the admin can edit or delete teaching assignments.", "error");
+    return;
+  }
   const load = state.loads.find((item) => item.id === id);
   if (!load || !window.confirm(`Delete the ${load.subject} assignment for ${teacherName(load.teacherId)}?`)) return;
   const previousLoads = state.loads;
@@ -1411,6 +1646,10 @@ function csvEscape(value) {
 }
 
 function exportCsv() {
+  if (!isAdminAccount()) {
+    showToast("Only the admin can export schoolwide records.", "error");
+    return;
+  }
   const columns = ["School", "School Year", "Teacher", "Employee ID", "Position", "Employment Status", "Learning Area", "Grade Level", "Section", "Group Name", "Period", "Period Start Time", "Period End Time", "Days", "Minutes Per Week", "Schedule"];
   const rows = state.loads.map((load) => {
     const teacher = state.teachers.find((item) => item.id === load.teacherId);
@@ -1447,6 +1686,10 @@ function exportCsv() {
 }
 
 function openSettingsDialog() {
+  if (!isAdminAccount()) {
+    showToast("Only the admin can manage school settings.", "error");
+    return;
+  }
   document.querySelector("#setting-school").value = state.settings.schoolName ?? "";
   document.querySelector("#setting-school-address").value = state.settings.schoolAddress ?? "";
   document.querySelector("#setting-school-id").value = state.settings.schoolId ?? "";
@@ -1544,6 +1787,10 @@ function renderPeriodTimeInputs(groupName) {
 }
 
 function addGroupName() {
+  if (!isAdminAccount()) {
+    showToast("Only the admin can manage groups and periods.", "error");
+    return;
+  }
   const input = document.querySelector("#new-group-name");
   const groupName = input.value.trim();
   if (!groupName) {
@@ -1573,6 +1820,10 @@ function addGroupName() {
 }
 
 function removeGroupName() {
+  if (!isAdminAccount()) {
+    showToast("Only the admin can manage groups and periods.", "error");
+    return;
+  }
   const select = document.querySelector("#setting-group-names");
   const groupNames = [...select.options].map((option) => option.value);
   if (groupNames.length <= 1) {
@@ -1588,6 +1839,10 @@ function removeGroupName() {
 
 async function saveSettings(event) {
   event.preventDefault();
+  if (!isAdminAccount()) {
+    showToast("Only the admin can manage school settings.", "error");
+    return;
+  }
   const form = new FormData(event.currentTarget);
   const logoFile = document.querySelector("#setting-school-logo").files[0];
   let schoolLogo = state.settings.schoolLogo ?? "";
@@ -1672,10 +1927,8 @@ function closeSidebar() {
 }
 
 function enterApplication() {
-  document.querySelector("#login-screen").hidden = true;
-  document.querySelector("#app-shell").hidden = false;
   if (!appInitialized) {
-    initializeApp();
+    if (!initializeApp()) return false;
     appInitialized = true;
   } else {
     state.activeView = "overview";
@@ -1683,6 +1936,9 @@ function enterApplication() {
     render();
     switchView("overview");
   }
+  document.querySelector("#login-screen").hidden = true;
+  document.querySelector("#app-shell").hidden = false;
+  return true;
 }
 
 function setLoginMode(registering) {
@@ -1708,7 +1964,15 @@ function setAccountSession(account, errorElement) {
     return false;
   }
   state.currentAccount = signedInAccount;
-  enterApplication();
+  if (!enterApplication()) {
+    state.currentAccount = null;
+    try {
+      sessionStorage.removeItem(LOGIN_SESSION_KEY);
+    } catch (error) {
+      displayLoginError(errorElement, `Couldn't clear the sign-in session: ${error.message}`);
+    }
+    return false;
+  }
   return true;
 }
 
@@ -1750,34 +2014,40 @@ function createTeacherAccount(event) {
     loginCount: 1,
     lastLoginAt: timestamp,
   };
-  const initialState = {
-    teachers: [{
+  const teacher = {
       id: teacherId,
       name: document.querySelector("#registration-name").value.trim(),
       employeeId: document.querySelector("#registration-employee-id").value.trim(),
       position: document.querySelector("#registration-position").value.trim(),
       status: "Active",
-    }],
-    loads: [],
-    substitutionPlans: [],
-    settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
-  };
-  if (!initialState.teachers[0].name) {
+    };
+  if (!teacher.name) {
     displayLoginError(errorElement, "Enter your full name.");
     document.querySelector("#registration-name").focus();
     return;
   }
 
+  const previousSchoolRecords = localStorage.getItem(STORAGE_KEY);
+  let schoolRecords = { teachers: [], loads: [], substitutionPlans: [], settings: {} };
   try {
-    localStorage.setItem(accountStorageKey(account), JSON.stringify(initialState));
+    if (previousSchoolRecords) schoolRecords = JSON.parse(previousSchoolRecords);
+    if (!schoolRecords || !Array.isArray(schoolRecords.teachers) || !Array.isArray(schoolRecords.loads)) {
+      throw new Error("Saved school records have an invalid format.");
+    }
+    schoolRecords.substitutionPlans = Array.isArray(schoolRecords.substitutionPlans)
+      ? schoolRecords.substitutionPlans
+      : [];
+    schoolRecords.teachers.push(teacher);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(schoolRecords));
   } catch (error) {
-    displayLoginError(errorElement, `Couldn't create this account's local records: ${error.message}`);
+    displayLoginError(errorElement, `Couldn't add this teacher to the local school records: ${error.message}`);
     return;
   }
   const nextAccounts = [...accounts, account];
   if (!saveAccounts(nextAccounts, errorElement)) {
     try {
-      localStorage.removeItem(accountStorageKey(account));
+      if (previousSchoolRecords === null) localStorage.removeItem(STORAGE_KEY);
+      else localStorage.setItem(STORAGE_KEY, previousSchoolRecords);
     } catch (error) {
       displayLoginError(errorElement, `Couldn't finish creating the account: ${error.message}`);
       return;
@@ -1791,7 +2061,10 @@ function createTeacherAccount(event) {
     return;
   }
   state.currentAccount = account;
-  enterApplication();
+  if (!enterApplication()) {
+    state.currentAccount = null;
+    sessionStorage.removeItem(LOGIN_SESSION_KEY);
+  }
 }
 
 function initialize() {
@@ -1875,6 +2148,15 @@ function initialize() {
 }
 
 function initializeApp() {
+  try {
+    migrateTeacherAccountRecords();
+  } catch (error) {
+    displayLoginError(
+      document.querySelector("#login-error"),
+      `Couldn't prepare shared school records: ${error.message}`,
+    );
+    return false;
+  }
   loadState();
   render();
 
@@ -1911,13 +2193,13 @@ function initializeApp() {
     schoolLogoPreviewUrl = "";
     updateSchoolLogoPreview("");
   });
-  document.querySelector("#add-substitution-plan").addEventListener("click", openSubstitutionDialog);
+  document.querySelector("#add-substitution-plan").addEventListener("click", () => openSubstitutionDialog());
   document.querySelector("#manage-leave-teachers")?.addEventListener("click", () => {
     document.querySelector("#substitution-dialog").close();
     switchView("teachers");
   });
   document.querySelectorAll("[data-add-substitution-plan]").forEach((button) =>
-    button.addEventListener("click", openSubstitutionDialog));
+    button.addEventListener("click", () => openSubstitutionDialog()));
   const refreshSubstitutionLoads = () => populateSubstitutionLoads(
     document.querySelector("#substitution-leave-teacher").value,
     document.querySelector("#substitution-cover-teacher").value,
@@ -2029,6 +2311,7 @@ function initializeApp() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closeSidebar();
   });
+  return true;
 }
 
 initialize();

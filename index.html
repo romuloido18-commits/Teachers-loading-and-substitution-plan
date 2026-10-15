@@ -44,7 +44,7 @@
           <div class="login-panel-heading">
             <div class="eyebrow"><span class="eyebrow-line"></span> NEW TEACHER</div>
             <h1>Create account</h1>
-            <p class="login-subtitle">Your profile and assignments will be kept separate in this browser.</p>
+            <p class="login-subtitle">Your profile and assignments will be added to school records in this browser.</p>
           </div>
           <label class="field login-field">Full name<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="registration-name" name="name" type="text" maxlength="100" autocomplete="name" required></span></label>
           <label class="field login-field">Employee ID <span>(optional)</span><span class="login-input-wrap"><span aria-hidden="true">#</span><input id="registration-employee-id" name="employeeId" type="text" maxlength="40"></span></label>
@@ -82,9 +82,9 @@
             <span class="nav-icon" aria-hidden="true">◷</span> Groups &amp; periods
           </button>
         </nav>
-        <div class="sidebar-label sidebar-label-secondary">MANAGEMENT</div>
-        <nav class="main-nav" aria-label="Management">
-          <button class="nav-link" data-view="teachers" type="button">
+        <div class="sidebar-label sidebar-label-secondary" id="sidebar-management-label">MANAGEMENT</div>
+        <nav class="main-nav" id="nav-management" aria-label="Management">
+          <button class="nav-link" id="nav-teachers" data-view="teachers" type="button">
             <span class="nav-icon" aria-hidden="true">♙</span> Teachers Account
             <span class="nav-count" id="teacher-nav-count">0</span>
           </button>
@@ -207,13 +207,13 @@
             <div class="teacher-dashboard-links" aria-label="Teacher dashboard shortcuts">
               <button class="teacher-dashboard-card" data-go="loads" type="button">
                 <span class="teacher-dashboard-icon" aria-hidden="true">▤</span>
-                <span class="teacher-dashboard-copy"><strong>Teaching loads</strong><small>View and manage teacher assignments</small></span>
+                <span class="teacher-dashboard-copy"><strong>Teaching loads</strong><small id="teacher-load-shortcut-copy">View and manage teacher assignments</small></span>
                 <span class="teacher-dashboard-count" id="teacher-dashboard-load-count">0 assignments</span>
                 <span class="teacher-dashboard-arrow" aria-hidden="true">→</span>
               </button>
               <button class="teacher-dashboard-card" data-go="substitutions" type="button">
                 <span class="teacher-dashboard-icon" aria-hidden="true">⇄</span>
-                <span class="teacher-dashboard-copy"><strong>Substitution plans</strong><small>Review and manage staff coverage</small></span>
+                <span class="teacher-dashboard-copy"><strong>Substitution plans</strong><small id="teacher-substitution-shortcut-copy">Review and manage staff coverage</small></span>
                 <span class="teacher-dashboard-count" id="teacher-dashboard-substitution-count">0 plans</span>
                 <span class="teacher-dashboard-arrow" aria-hidden="true">→</span>
               </button>
@@ -283,14 +283,14 @@
                 <button class="button button-primary" id="add-substitution-plan" type="button"><span aria-hidden="true">＋</span> Create substitution plan</button>
               </div>
             </div>
-            <p class="privacy-note" id="teacher-substitution-note" hidden>Teacher accounts can only access their own profile and assignments. Substitution plans need the schoolwide teacher roster, so create or manage them from the admin account.</p>
+            <p class="privacy-note" id="teacher-substitution-note" hidden>Submit a coverage proposal when your employment status is marked On leave. The admin reviews and approves all plans.</p>
             <section class="panel list-panel">
               <div class="list-toolbar">
                 <div><h2>Coverage plans</h2><p class="panel-subtitle" id="substitution-plan-caption">0 substitution plans</p></div>
               </div>
               <div class="table-wrap">
                 <table>
-                  <thead><tr><th>TEACHER ON LEAVE</th><th>SUBSTITUTE TEACHER</th><th>LEAVE DATES</th><th>LOADS TO COVER</th><th><span class="sr-only">Actions</span></th></tr></thead>
+                  <thead><tr><th>TEACHER ON LEAVE</th><th>SUBSTITUTE TEACHER</th><th>LEAVE DATES</th><th>LOADS TO COVER</th><th>STATUS</th><th><span class="sr-only">Actions</span></th></tr></thead>
                   <tbody id="substitution-plans-body"></tbody>
                 </table>
                 <div class="empty-state" id="substitution-plans-empty"><span class="empty-icon" aria-hidden="true">⇄</span><strong>No substitution plans yet</strong><p>Create a plan to assign teaching loads to an available teacher.</p><button class="button button-primary button-small" data-add-substitution-plan type="button">Create substitution plan</button></div>

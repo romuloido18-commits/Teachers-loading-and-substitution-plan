@@ -12,9 +12,9 @@ Open **Settings** to configure school branding, including the school name, addre
 
 ## Sign in
 
-Teachers can create an account from the sign-in page. Each teacher account gets its own profile and teaching-load records in the current browser, and every successful sign-in is recorded in **Teachers Account**. Use the same browser and device to see that account and its records again. The existing `admin` sign-in continues to access legacy schoolwide records.
+Teachers can create an account from the sign-in page. Their profile and teaching loads are added to the school's shared records in that browser. Teachers can add loads only for their own profile and submit a substitution proposal when the admin has marked them **On leave**. Proposals remain pending until the admin approves or rejects them. Teachers cannot manage teacher profiles, settings, groups, periods, or other schoolwide records. The admin retains final control and can review all teacher sign-ins under **Teachers Account**. The existing `admin` sign-in continues to access legacy schoolwide records.
 
-This static app has no server: accounts, passwords, and sign-in history are stored in browser local storage and do not sync across browsers or devices. This is not secure authentication; do not use it to protect confidential information or reuse a sensitive password. Teacher accounts cannot access the schoolwide roster needed to create substitution plans; manage those from the admin account.
+This static app has no server: accounts, passwords, records, and sign-in history are stored in browser local storage and do not sync across browsers or devices. The admin can supervise teacher activity only in that same browser. This is not secure authentication or a true access-control boundary; do not use it to protect confidential information or reuse a sensitive password.
 
 ## Run
 
