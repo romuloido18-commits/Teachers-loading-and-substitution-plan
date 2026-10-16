@@ -61,7 +61,7 @@ const elements = {
   views: [...document.querySelectorAll(".view-panel")],
   navLinks: [...document.querySelectorAll(".nav-link")],
   breadcrumb: document.querySelector("#breadcrumb-current"),
-  teacherDialog: document.querySelector("#teacher-dialog"),
+  teacherDialog: document.querySelector("#teacher-dialog"), teacherPasswordDialog: document.querySelector("#teacher-password-dialog"),   teacherPasswordDialog: document.querySelector("#teacher-password-dialog"),
   loadDialog: document.querySelector("#load-dialog"),
   teacherLoadPreview: document.querySelector("#teacher-load-preview"),
   settingsDialog: document.querySelector("#settings-dialog"),
@@ -473,7 +473,7 @@ function makeActionCell(row, type, id, label, closeLoadPreview = false) {
     closeLoadDialogs();
     type === "teacher" ? openTeacherDialog(id) : openLoadDialog(id);
   });
-  actions.append(edit);
+  actions.append(edit);   if (type === "teacher" && isAdminAccount()) {     const resetPassword = document.createElement("button");     resetPassword.className = "row-action";     resetPassword.type = "button";     resetPassword.setAttribute("aria-label", "Reset password for " + label);     resetPassword.title = "Set a temporary password";     resetPassword.textContent = "↻";     resetPassword.addEventListener("click", () => openTeacherPasswordDialog(id));     actions.append(resetPassword);   }
   if (!(type === "teacher" && state.currentAccount?.role === "teacher")) {
     const remove = document.createElement("button");
     remove.className = "row-action delete";
@@ -492,7 +492,7 @@ function makeActionCell(row, type, id, label, closeLoadPreview = false) {
   row.append(cell);
 }
 
-function setEmptyState(tableBody, emptyState, hasRows) {
+function openTeacherPasswordDialog(teacherId) {   if (!isAdminAccount()) { showToast("Only the admin can reset teacher passwords.", "error"); return; }   const teacher = state.teachers.find((item) => item.id === teacherId);   if (!teacher) { showToast("That teacher account could not be found.", "error"); return; }   document.querySelector("#teacher-password-form").reset();   document.querySelector("#teacher-password-id").value = teacherId;   document.querySelector("#teacher-password-name").textContent = teacher.name;   document.querySelector("#teacher-password-error").hidden = true;   elements.teacherPasswordDialog.showModal();   document.querySelector("#teacher-new-password").focus(); }  async function resetTeacherPassword(event) {   event.preventDefault();   if (!isAdminAccount()) { showToast("Only the admin can reset teacher passwords.", "error"); return; }   const password = document.querySelector("#teacher-new-password").value;   const confirmation = document.querySelector("#teacher-confirm-new-password").value;   const errorElement = document.querySelector("#teacher-password-error");   errorElement.hidden = true;   if (password.length < 12 || password.length > 128) {     errorElement.textContent = "Use a temporary password with 12–128 characters.";     errorElement.hidden = false;     document.querySelector("#teacher-new-password").focus();     return;   }   if (password !== confirmation) {     errorElement.textContent = "The passwords do not match.";     errorElement.hidden = false;     document.querySelector("#teacher-confirm-new-password").focus();     return;   }   try {     const result = await supabaseClient.functions.invoke("admin-reset-teacher-password", {       body: { teacher_id: document.querySelector("#teacher-password-id").value, password },     });     if (result.error) {       let message = result.error.message;       if (result.error.context instanceof Response) {         try {           const details = await result.error.context.clone().json();           if (typeof details.error === "string") message = details.error;         } catch { message = result.error.message; }       }       throw new Error(message);     }     if (!result.data?.success) throw new Error(result.data?.error ?? "The server returned an invalid response.");   } catch (error) {     errorElement.textContent = "Couldn't reset the teacher password: " + error.message;     errorElement.hidden = false;     return;   }   elements.teacherPasswordDialog.close();   document.querySelector("#teacher-password-form").reset();   showToast("Password reset. Give the temporary password to the teacher securely; they must change it at next sign-in."); }  function setEmptyState(tableBody, emptyState, hasRows) {
   tableBody.replaceChildren();
   emptyState.classList.toggle("visible", !hasRows);
 }
@@ -2556,7 +2556,7 @@ function initializeApp() {
     closeSidebar();
     openSettingsDialog();
   });
-  document.querySelector("#teacher-form").addEventListener("submit", saveTeacher);
+  document.querySelector("#teacher-form").addEventListener("submit", saveTeacher); document.querySelector("#teacher-password-form").addEventListener("submit", resetTeacherPassword);
   document.querySelector("#load-form").addEventListener("submit", saveLoad);
   document.querySelector("#preview-teacher-load").addEventListener("click", previewTeacherLoads);
   document.querySelector("#load-group-name").addEventListener("change", (event) => {
