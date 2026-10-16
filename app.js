@@ -1691,7 +1691,7 @@ async function saveTeacher(event) {
   }
   if (!id) {
 
-    const username = String(form.get("username") ?? "").trim().toLocaleLowerCase();     const email = usernameLoginEmail(username);
+    const username = String(form.get("username") ?? "").trim().toLocaleLowerCase();
     const temporaryPassword = String(form.get("temporaryPassword") ?? "");
     if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) {
       profileError.textContent = "Use 3–40 letters, numbers, periods, underscores, or hyphens for the username.";
@@ -1699,7 +1699,7 @@ async function saveTeacher(event) {
       document.querySelector("#teacher-username").focus();
       return;
     }
-    if (temporaryPassword.length < 12) {
+    const email = usernameLoginEmail(username); if (temporaryPassword.length < 12) {
       profileError.textContent = "Use a temporary password with at least 12 characters.";
       profileError.hidden = false;
       document.querySelector("#teacher-temp-password").focus();
