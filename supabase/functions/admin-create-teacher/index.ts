@@ -67,7 +67,7 @@ Deno.serve(async (request: Request) => {
     return response(request, 400, { error: "Account details are not valid JSON." });
   }
 
-  const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
+  const email = /^[a-z0-9._-]{3,40}$/.test(username) ? `u-${btoa(username).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}@teacher-load-manager.invalid` : "";
   const username = typeof input.username === "string" ? input.username.trim().toLowerCase() : "";
   const password = typeof input.password === "string" ? input.password : "";
   const fullName = typeof input.full_name === "string" ? input.full_name.trim() : "";
