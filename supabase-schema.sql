@@ -4,8 +4,12 @@ create table if not exists public.profiles (
   username text not null unique,
   role text not null default 'teacher' check (role in ('admin', 'teacher')),
   teacher_id uuid not null unique,
+  must_change_password boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+alter table public.profiles
+  add column if not exists must_change_password boolean not null default false;
 
 create table if not exists public.school_state (
   id boolean primary key default true check (id),
@@ -72,6 +76,28 @@ create trigger on_auth_user_created_teacher
   after insert on auth.users
   for each row execute function public.handle_new_teacher();
 
+create or replace function public.clear_temporary_password_requirement()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if old.encrypted_password is distinct from new.encrypted_password then
+    update public.profiles
+    set must_change_password = false
+    where id = new.id and must_change_password;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function public.clear_temporary_password_requirement() from public, anon, authenticated;
+drop trigger if exists on_auth_user_password_changed on auth.users;
+create trigger on_auth_user_password_changed
+  after update of encrypted_password on auth.users
+  for each row execute function public.clear_temporary_password_requirement();
+
 create or replace function public.load_school_state()
 returns jsonb
 language plpgsql
@@ -90,6 +116,9 @@ begin
 
   if not found then
     raise exception 'An active teacher account is required to load school records.';
+  end if;
+  if account.must_change_password then
+    raise exception 'Change your temporary password before accessing school records.';
   end if;
 
   select * into stored from public.school_state where id = true;
@@ -180,6 +209,9 @@ begin
 
   if not found then
     raise exception 'An active teacher account is required to save school records.';
+  end if;
+  if account.must_change_password then
+    raise exception 'Change your temporary password before saving school records.';
   end if;
 
   select * into stored from public.school_state where id = true for update;
@@ -349,6 +381,7 @@ end;
 $$;
 
 revoke all on function public.handle_new_teacher() from public, anon, authenticated;
+revoke all on function public.clear_temporary_password_requirement() from public, anon, authenticated;
 revoke all on function public.load_school_state() from public, anon;
 revoke all on function public.save_school_state(jsonb, bigint) from public, anon;
 grant execute on function public.load_school_state() to authenticated;

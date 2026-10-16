@@ -1575,9 +1575,24 @@ function openTeacherDialog(teacherId) {
   document.querySelector("#teacher-employee-id").value = teacher?.employeeId ?? "";
   document.querySelector("#teacher-position").value = teacher?.position ?? "";
   document.querySelector("#teacher-status").value = teacher?.status ?? "Active";
-  document.querySelector("#teacher-dialog-title").textContent = teacher ? "Edit teacher" : "Add teacher";
+  const editing = Boolean(teacher);
+  document.querySelector("#teacher-dialog-title").textContent = editing ? "Edit teacher profile" : "Add teacher user account";
+  document.querySelector("#teacher-dialog-description").textContent = editing
+    ? "Update the teacher's profile details."
+    : "Create a login and profile. Give the temporary password to the teacher securely.";
+  document.querySelector("#teacher-email-field").hidden = editing;
+  document.querySelector("#teacher-username-field").hidden = editing;
+  document.querySelector("#teacher-temp-password-field").hidden = editing;
+  document.querySelector("#teacher-confirm-password-field").hidden = editing;
+  document.querySelector("#teacher-status-field").hidden = !editing;
+  document.querySelector("#teacher-email").required = !editing;
+  document.querySelector("#teacher-username").required = !editing;
+  document.querySelector("#teacher-temp-password").required = !editing;
+  document.querySelector("#teacher-confirm-password").required = !editing;
+  document.querySelector("#teacher-form-error").hidden = true;
+  document.querySelector("#teacher-form-submit").textContent = editing ? "Save teacher profile" : "Create user account";
   elements.teacherDialog.showModal();
-  document.querySelector("#teacher-name").focus();
+  document.querySelector(editing ? "#teacher-name" : "#teacher-email").focus();
 }
 
 function openLoadDialog(loadId, selectedTeacherId = "") {
@@ -1667,9 +1682,79 @@ async function saveTeacher(event) {
   const form = new FormData(event.currentTarget);
   const id = document.querySelector("#teacher-id").value;
   const employeeId = String(form.get("employeeId") ?? "").trim();
+  const profileError = document.querySelector("#teacher-form-error");
+  profileError.hidden = true;
   if (employeeId && state.teachers.some((teacher) => teacher.id !== id && teacher.employeeId?.toLocaleLowerCase() === employeeId.toLocaleLowerCase())) {
     showToast("That employee ID is already used by another teacher.", "error");
     document.querySelector("#teacher-employee-id").focus();
+    return;
+  }
+  if (!id) {
+    const email = String(form.get("email") ?? "").trim().toLocaleLowerCase();
+    const username = String(form.get("username") ?? "").trim().toLocaleLowerCase();
+    const temporaryPassword = String(form.get("temporaryPassword") ?? "");
+    if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) {
+      profileError.textContent = "Use 3–40 letters, numbers, periods, underscores, or hyphens for the username.";
+      profileError.hidden = false;
+      document.querySelector("#teacher-username").focus();
+      return;
+    }
+    if (temporaryPassword.length < 12) {
+      profileError.textContent = "Use a temporary password with at least 12 characters.";
+      profileError.hidden = false;
+      document.querySelector("#teacher-temp-password").focus();
+      return;
+    }
+    if (temporaryPassword !== String(form.get("confirmPassword") ?? "")) {
+      profileError.textContent = "The temporary passwords do not match.";
+      profileError.hidden = false;
+      document.querySelector("#teacher-confirm-password").focus();
+      return;
+    }
+    let created;
+    try {
+      const result = await supabaseClient.functions.invoke("admin-create-teacher", {
+        body: {
+          email,
+          username,
+          password: temporaryPassword,
+          full_name: String(form.get("name") ?? "").trim(),
+          employee_id: employeeId,
+          position: String(form.get("position") ?? "").trim(),
+        },
+      });
+      if (result.error) {
+        let message = result.error.message;
+        if (result.error.context instanceof Response) {
+          try {
+            const details = await result.error.context.clone().json();
+            if (typeof details.error === "string") message = details.error;
+          } catch {
+            message = result.error.message;
+          }
+        }
+        throw new Error(message);
+      }
+      created = result.data;
+    } catch (error) {
+      profileError.textContent = `Couldn't create the user account: ${error.message}`;
+      profileError.hidden = false;
+      return;
+    }
+    if (!created?.success) {
+      profileError.textContent = `Couldn't create the user account: ${created?.error ?? "The server returned an invalid response."}`;
+      profileError.hidden = false;
+      return;
+    }
+    elements.teacherDialog.close();
+    document.querySelector("#teacher-form").reset();
+    try {
+      await loadCloudState();
+      render();
+      showToast("Teacher account created. Give the temporary password to the teacher securely.");
+    } catch (error) {
+      showToast(`Account created, but the directory couldn't refresh: ${error.message}. Reload the page.`, "error");
+    }
     return;
   }
   const record = {
@@ -1689,7 +1774,7 @@ async function saveTeacher(event) {
   }
   elements.teacherDialog.close();
   render();
-  showToast(id ? "Teacher profile updated." : "Teacher profile added.");
+  showToast("Teacher profile updated.");
 }
 
 async function saveLoad(event) {
@@ -2145,7 +2230,7 @@ function closeSidebar() {
 async function enterApplication(user, errorElement) {
   const { data: profile, error } = await supabaseClient
     .from("profiles")
-    .select("id, email, username, role, teacher_id")
+    .select("id, email, username, role, teacher_id, must_change_password")
     .eq("id", user.id)
     .single();
   if (error || !profile) {
@@ -2153,6 +2238,17 @@ async function enterApplication(user, errorElement) {
     await supabaseClient.auth.signOut();
     return false;
   }
+  if (profile.must_change_password) {
+    document.querySelector("#login-form").hidden = true;
+    document.querySelector("#registration-form").hidden = true;
+    document.querySelector("#initial-password-form").hidden = false;
+    document.querySelector("#initial-password-error").hidden = true;
+    document.querySelector("#login-screen").hidden = false;
+    document.querySelector("#app-shell").hidden = true;
+    document.querySelector("#initial-new-password").focus();
+    return true;
+  }
+  document.querySelector("#initial-password-form").hidden = true;
   state.currentAccount = {
     id: profile.id,
     email: profile.email,
@@ -2183,9 +2279,33 @@ async function enterApplication(user, errorElement) {
 function setLoginMode(registering) {
   document.querySelector("#login-form").hidden = registering;
   document.querySelector("#registration-form").hidden = !registering;
+  document.querySelector("#initial-password-form").hidden = true;
   document.querySelector("#login-error").hidden = true;
   document.querySelector("#registration-error").hidden = true;
   document.querySelector(registering ? "#registration-name" : "#login-email").focus();
+}
+
+async function changeInitialPassword(event) {
+  event.preventDefault();
+  const errorElement = document.querySelector("#initial-password-error");
+  const password = document.querySelector("#initial-new-password").value;
+  if (password.length < 12) {
+    displayLoginError(errorElement, "Choose a password with at least 12 characters.");
+    return;
+  }
+  if (password !== document.querySelector("#initial-confirm-password").value) {
+    displayLoginError(errorElement, "The passwords do not match.");
+    document.querySelector("#initial-confirm-password").focus();
+    return;
+  }
+  try {
+    const { data, error } = await supabaseClient.auth.updateUser({ password });
+    if (error) throw error;
+    document.querySelector("#initial-password-form").reset();
+    if (!data.user || !(await enterApplication(data.user, errorElement))) return;
+  } catch (error) {
+    displayLoginError(errorElement, `Couldn't update your password: ${error.message}`);
+  }
 }
 
 function displayLoginError(element, message) {
@@ -2260,6 +2380,8 @@ function initialize() {
   const loginError = document.querySelector("#login-error");
   const registrationForm = document.querySelector("#registration-form");
   const registrationError = document.querySelector("#registration-error");
+  const initialPasswordForm = document.querySelector("#initial-password-form");
+  const initialPasswordError = document.querySelector("#initial-password-error");
   if (!window.supabase?.createClient) {
     displayLoginError(loginError, "The sign-in service could not be loaded. Check your internet connection and refresh the page.");
     return;
@@ -2291,6 +2413,18 @@ function initialize() {
     registrationError.hidden = true;
     await createTeacherAccount(event);
   });
+  initialPasswordForm.addEventListener("submit", changeInitialPassword);
+  document.querySelector("#initial-password-signout").addEventListener("click", async () => {
+    const { error } = await supabaseClient.auth.signOut();
+    if (error) {
+      displayLoginError(initialPasswordError, `Couldn't sign out: ${error.message}`);
+      return;
+    }
+    initialPasswordForm.reset();
+    document.querySelector("#initial-password-form").hidden = true;
+    document.querySelector("#login-screen").hidden = false;
+    setLoginMode(false);
+  });
   document.querySelector("#show-registration").addEventListener("click", () => setLoginMode(true));
   document.querySelector("#show-login").addEventListener("click", () => setLoginMode(false));
   document.querySelector("#logout-button").addEventListener("click", async () => {
@@ -2309,8 +2443,10 @@ function initialize() {
     state.currentAccount = null;
     document.querySelector("#login-form").reset();
     document.querySelector("#registration-form").reset();
+    initialPasswordForm.reset();
     document.querySelector("#login-error").hidden = true;
     registrationError.hidden = true;
+    initialPasswordError.hidden = true;
     setLoginMode(false);
   });
 

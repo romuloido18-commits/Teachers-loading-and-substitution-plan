@@ -16,16 +16,19 @@ Open **Settings** to configure school branding, including the school name, addre
 
 Teachers can create an account with an email address and password. Their profile is added to the shared records automatically when Supabase Auth creates the account. Teachers can add, edit, or delete loads only for their own profile, apply for leave, and submit a substitution proposal after the admin approves their leave application. Leave applications and coverage proposals remain pending until the admin reviews them. The admin retains final control of schoolwide records. The application does not record sign-in history.
 
+Admins can use **Teachers Account → Add user account** to create an individual teacher login. Enter the teacher's name, email, username, and a temporary password of at least 12 characters. The teacher must replace that password at first sign-in before accessing school records. Give the temporary password to the teacher through a private channel; the system does not email it. This process creates confirmed teacher accounts directly, so it does not use Supabase's limited confirmation-email sender. Never create shared accounts or grant teacher accounts the admin role.
+
 ## Supabase setup and publishing
 
 The shared-account version is published at [Teacher Load Manager](https://romuloido18-commits.github.io/Teachers-loading-and-substitution-plan/). It uses the Supabase project configured in `app.js`; the SQL in `supabase-schema.sql` has been installed, and the Supabase Auth site URL and redirect allowlist are configured for this GitHub Pages address.
 
 To start using the shared system:
 
-1. Create a new administrator account through **Create a teacher account** on the published site. If email confirmation is enabled in Supabase, confirm the message before signing in.
-2. In the Supabase SQL Editor, promote that account by replacing `ADMIN_EMAIL_HERE` in the final commented `UPDATE public.profiles` statement in `supabase-schema.sql` with its registered email. Do not let users self-assign an administrator role.
-3. Sign in again as the administrator. On the browser that contains the old records, open **Settings** and select **Import records from this browser**. This explicitly merges teacher profiles, loads, leave applications, and substitution plans by record ID without replacing existing cloud records.
-4. Teachers should create their own new email/password accounts from the published site. Sign in with those same credentials on other devices to access the shared records.
+1. Apply the latest `supabase-schema.sql` in the Supabase SQL Editor. It includes the profile flag and database trigger that enforce first-login password changes.
+2. Deploy `supabase/functions/admin-create-teacher` as the `admin-create-teacher` Edge Function and enable JWT verification. Its CORS allowlist is restricted to the GitHub Pages origin. The function verifies the caller's signed-in admin role before using Supabase's server-side Auth Admin API. Supabase provides `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to Edge Functions; never put the service-role key in `app.js` or any browser-accessible file.
+3. The first administrator must register through **Create a teacher account**, confirm their email if required, then be promoted in the SQL Editor. Do not let public users self-assign admin roles.
+4. Publish the latest `index.html`, `app.js`, `styles.css`, `supabase-schema.sql`, and `supabase/functions` files. Sign in as admin and use **Teachers Account → Add user account** to create teacher logins.
+5. On the browser containing old records, use **Settings → Import records from this browser** to merge old school records. Teachers can also register their own accounts, then use their accounts on other devices.
 
 Previous browser-local accounts (including the old `admin` sign-in) are not Supabase accounts and cannot be used on another device. Importing records does not transfer passwords or account logins. Back up data before importing. Never put a Supabase service-role key in this static app; only the public anon key may be used alongside the database's RLS and RPC restrictions.
 
