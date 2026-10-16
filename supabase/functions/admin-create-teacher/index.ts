@@ -87,6 +87,14 @@ Deno.serve(async (request: Request) => {
     return response(request, 400, { error: "Check the teacher name, employee ID, and position lengths." });
   }
 
+  const { data: existingUsername, error: usernameError } = await adminClient
+    .from("profiles")
+    .select("id")
+    .eq("username", username)
+    .maybeSingle();
+  if (usernameError) return response(request, 500, { error: "Could not check whether that username is available." });
+  if (existingUsername) return response(request, 409, { error: "That username is already in use. Choose a different username." });
+
   const { data: created, error: createError } = await adminClient.auth.admin.createUser({
     email,
     password,
@@ -99,6 +107,16 @@ Deno.serve(async (request: Request) => {
     },
   });
   if (createError || !created.user) {
+    if (createError?.message === "Database error creating new user") {
+      const { data: usernameConflict, error: conflictError } = await adminClient
+        .from("profiles")
+        .select("id")
+        .eq("username", username)
+        .maybeSingle();
+      if (!conflictError && usernameConflict) {
+        return response(request, 409, { error: "That username is already in use. Choose a different username." });
+      }
+    }
     return response(request, 400, { error: createError?.message ?? "The account could not be created." });
   }
 
