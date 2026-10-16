@@ -1579,20 +1579,20 @@ function openTeacherDialog(teacherId) {
   document.querySelector("#teacher-dialog-title").textContent = editing ? "Edit teacher profile" : "Add teacher user account";
   document.querySelector("#teacher-dialog-description").textContent = editing
     ? "Update the teacher's profile details."
-    : "Create a login and profile. Give the temporary password to the teacher securely.";
-  document.querySelector("#teacher-email-field").hidden = editing;
+    : "Create a username and profile. Give the username and temporary password to the teacher securely.";
+
   document.querySelector("#teacher-username-field").hidden = editing;
   document.querySelector("#teacher-temp-password-field").hidden = editing;
   document.querySelector("#teacher-confirm-password-field").hidden = editing;
   document.querySelector("#teacher-status-field").hidden = !editing;
-  document.querySelector("#teacher-email").required = !editing;
+
   document.querySelector("#teacher-username").required = !editing;
   document.querySelector("#teacher-temp-password").required = !editing;
   document.querySelector("#teacher-confirm-password").required = !editing;
   document.querySelector("#teacher-form-error").hidden = true;
   document.querySelector("#teacher-form-submit").textContent = editing ? "Save teacher profile" : "Create user account";
   elements.teacherDialog.showModal();
-  document.querySelector(editing ? "#teacher-name" : "#teacher-email").focus();
+  document.querySelector(editing ? "#teacher-name" : "#teacher-username").focus();
 }
 
 function openLoadDialog(loadId, selectedTeacherId = "") {
@@ -1690,8 +1690,8 @@ async function saveTeacher(event) {
     return;
   }
   if (!id) {
-    const email = String(form.get("email") ?? "").trim().toLocaleLowerCase();
-    const username = String(form.get("username") ?? "").trim().toLocaleLowerCase();
+
+    const username = String(form.get("username") ?? "").trim().toLocaleLowerCase();     const email = usernameLoginEmail(username);
     const temporaryPassword = String(form.get("temporaryPassword") ?? "");
     if (!/^[a-zA-Z0-9._-]{3,40}$/.test(username)) {
       profileError.textContent = "Use 3–40 letters, numbers, periods, underscores, or hyphens for the username.";
@@ -1751,7 +1751,7 @@ async function saveTeacher(event) {
     try {
       await loadCloudState();
       render();
-      showToast("Teacher account created. Give the temporary password to the teacher securely.");
+      showToast("Teacher account created. Give the username and temporary password to the teacher securely.");
     } catch (error) {
       showToast(`Account created, but the directory couldn't refresh: ${error.message}. Reload the page.`, "error");
     }
@@ -2313,7 +2313,7 @@ function displayLoginError(element, message) {
   element.hidden = false;
 }
 
-async function createTeacherAccount(event) {
+function usernameLoginEmail(username) {   const encodedUsername = window.btoa(username)     .replace(/\+/g, "-")     .replace(/\//g, "_")     .replace(/=+$/, "");   return `u-${encodedUsername}@teacher-load-manager.invalid`; }  async function createTeacherAccount(event) {
   event.preventDefault();
   const errorElement = document.querySelector("#registration-error");
   const username = document.querySelector("#registration-username").value.trim();
@@ -2396,10 +2396,10 @@ function initialize() {
   }, 30000);
   loginForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    const email = document.querySelector("#login-email").value.trim();
+    const identifier = document.querySelector("#login-email").value.trim();
     const password = document.querySelector("#login-password").value;
     try {
-      const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      const { data, error } = await supabaseClient.auth.signInWithPassword({ email: identifier.includes("@") ? identifier.toLocaleLowerCase() : usernameLoginEmail(identifier.toLocaleLowerCase()), password });
       if (error) throw error;
       loginError.hidden = true;
       await enterApplication(data.user, loginError);
