@@ -5,9 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#eff6ff">
     <title>Teacher Load Manager</title>
-    <link rel="stylesheet" href="styles.css?v=20261016-teacher-login-fields">
+    <link rel="stylesheet" href="styles.css?v=20261016-teacher-username-login">
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="app.js?v=20261016-teacher-login-fields" defer></script>
+    <script src="app.js?v=20261016-teacher-username-login" defer></script>
   </head>
   <body>
     <main class="login-screen" id="login-screen">
@@ -34,12 +34,12 @@
             <h1>Sign in</h1>
             <p class="login-subtitle">Enter your account details to continue.</p>
           </div>
-          <label class="field login-field">Email<span class="login-input-wrap"><span aria-hidden="true">@</span><input id="login-email" name="email" type="email" placeholder="Enter your email address" autocomplete="email" required autofocus></span></label>
+          <label class="field login-field">Email or username<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="login-email" name="usernameOrEmail" type="text" placeholder="Enter your email or username" autocomplete="username" required autofocus></span></label>
           <label class="field login-field">Password<span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="login-password" name="password" type="password" placeholder="Enter your password" autocomplete="current-password" required></span></label>
           <p class="login-error" id="login-error" role="alert" hidden>Incorrect username or password.</p>
           <button class="button button-primary login-submit" type="submit">Log in <span aria-hidden="true">→</span></button>
           <button class="text-button login-account-toggle" id="show-registration" type="button">Create a teacher account</button>
-          <p class="login-privacy"><span aria-hidden="true">▣</span> Your account and school records are stored securely in the school's shared database. Use your registered email and keep your password private.</p>
+          <p class="login-privacy"><span aria-hidden="true">▣</span> Sign in with your registered email or, for an account created by an admin, your username. Keep your password private.</p>
         </form>
         <form class="login-panel registration-panel" id="registration-form" hidden>
           <div class="login-panel-heading">
@@ -50,7 +50,7 @@
           <label class="field login-field">Full name<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="registration-name" name="name" type="text" maxlength="100" autocomplete="name" required></span></label>
           <label class="field login-field">Employee ID <span>(optional)</span><span class="login-input-wrap"><span aria-hidden="true">#</span><input id="registration-employee-id" name="employeeId" type="text" maxlength="40"></span></label>
           <label class="field login-field">Position / designation <span>(optional)</span><span class="login-input-wrap"><span aria-hidden="true">▤</span><input id="registration-position" name="position" type="text" maxlength="80" placeholder="e.g. Teacher III"></span></label>
-          <label class="field login-field">Email<span class="login-input-wrap"><span aria-hidden="true">@</span><input id="registration-email" name="email" type="email" autocomplete="email" required></span></label>
+          <label class="field login-field">Email or username<span class="login-input-wrap"><span aria-hidden="true">@</span><input id="registration-email" name="email" type="email" autocomplete="email" required></span></label>
           <label class="field login-field">Username<span class="login-input-wrap"><span aria-hidden="true">♙</span><input id="registration-username" name="username" type="text" maxlength="40" autocomplete="username" pattern="[a-zA-Z0-9._-]{3,40}" title="Use 3–40 letters, numbers, periods, underscores, or hyphens." required></span></label>
           <label class="field login-field">Password <span>(at least 8 characters)</span><span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="registration-password" name="password" type="password" minlength="8" autocomplete="new-password" required></span></label>
           <label class="field login-field">Confirm password<span class="login-input-wrap"><span aria-hidden="true">⌑</span><input id="registration-confirm-password" name="confirmPassword" type="password" minlength="8" autocomplete="new-password" required></span></label>
@@ -351,8 +351,8 @@
         <input id="teacher-id" type="hidden">
         <div class="form-grid">
           <label class="field field-full">Full name <span class="required">*</span><input id="teacher-name" name="name" type="text" maxlength="100" placeholder="e.g. Maria Santos" required></label>
-          <label class="field field-full" id="teacher-email-field">Account email <span class="required">*</span><input id="teacher-email" name="email" type="email" maxlength="254" autocomplete="email" placeholder="teacher@school.edu.ph" required></label>
-          <label class="field field-full" id="teacher-username-field">Username <span class="required">*</span><input id="teacher-username" name="username" type="text" maxlength="40" pattern="[a-zA-Z0-9._-]{3,40}" title="Use 3–40 letters, numbers, periods, underscores, or hyphens." autocomplete="username" placeholder="e.g. maria.santos" required></label>
+          
+          <label class="field field-full" id="teacher-username-field">Username <span class="required">*</span><span>(the teacher uses this to sign in; no email is needed)</span><input id="teacher-username" name="username" type="text" maxlength="40" pattern="[a-zA-Z0-9._-]{3,40}" title="Use 3–40 letters, numbers, periods, underscores, or hyphens." autocomplete="username" placeholder="e.g. maria.santos" required></label>
           <label class="field" id="teacher-temp-password-field">Password <span class="required">*</span><span>(temporary; at least 12 characters)</span><input id="teacher-temp-password" name="temporaryPassword" type="password" minlength="12" autocomplete="new-password" placeholder="Enter a temporary password" required></label>
           <label class="field" id="teacher-confirm-password-field">Confirm temporary password<input id="teacher-confirm-password" name="confirmPassword" type="password" minlength="12" autocomplete="new-password" required></label>
           <label class="field">Employee ID<input id="teacher-employee-id" name="employeeId" type="text" maxlength="40" placeholder="e.g. 1234567"></label>
