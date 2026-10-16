@@ -67,15 +67,15 @@ Deno.serve(async (request: Request) => {
     return response(request, 400, { error: "Account details are not valid JSON." });
   }
 
-  const email = /^[a-z0-9._-]{3,40}$/.test(username) ? `u-${btoa(username).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}@teacher-load-manager.invalid` : "";
-  const username = typeof input.username === "string" ? input.username.trim().toLowerCase() : "";
+ const username = typeof input.username === "string" ? input.username.trim().toLowerCase() : ""; const email = /^[a-z0-9._-]{3,40}$/.test(username) ? `u-${btoa(username).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}@teacher-load-manager.invalid` : "";
+
   const password = typeof input.password === "string" ? input.password : "";
   const fullName = typeof input.full_name === "string" ? input.full_name.trim() : "";
   const employeeId = typeof input.employee_id === "string" ? input.employee_id.trim() : "";
   const position = typeof input.position === "string" ? input.position.trim() : "";
 
   if (!email || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return response(request, 400, { error: "Enter a valid email address." });
+    return response(request, 400, { error: "Username must be 3–40 letters, numbers, periods, underscores, or hyphens." });
   }
   if (!/^[a-z0-9._-]{3,40}$/.test(username)) {
     return response(request, 400, { error: "Username must be 3–40 letters, numbers, periods, underscores, or hyphens." });
